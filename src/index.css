@@ -59,9 +59,9 @@ canvas {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: rgba(5, 10, 21, 0.85);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    background: rgba(2, 6, 23, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     z-index: 100;
     transition: opacity 0.3s ease;
     padding: 1rem;

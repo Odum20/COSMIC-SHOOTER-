@@ -137,26 +137,45 @@ export default function App() {
           const btn = document.getElementById(id);
           if (!btn) return;
 
-          const press = (e: TouchEvent) => {
+          const press = (e: Event) => {
             e.preventDefault();
             this.keys[key] = true;
             btn.classList.add('active');
           };
 
-          const release = (e: TouchEvent) => {
+          const release = (e: Event) => {
             e.preventDefault();
             this.keys[key] = false;
             btn.classList.remove('active');
+          };
+
+          const clickAction = (e: Event) => {
+            e.preventDefault();
+            this.keys[key] = true;
+            btn.classList.add('active');
+            setTimeout(() => {
+              this.keys[key] = false;
+              btn.classList.remove('active');
+            }, 120);
           };
 
           btn.addEventListener('touchstart', press, { passive: false });
           btn.addEventListener('touchend', release, { passive: false });
           btn.addEventListener('touchcancel', release, { passive: false });
 
+          btn.addEventListener('mousedown', press);
+          btn.addEventListener('mouseup', release);
+          btn.addEventListener('mouseleave', release);
+          btn.addEventListener('click', clickAction);
+
           this.touchCleanups.push(() => {
             btn.removeEventListener('touchstart', press);
             btn.removeEventListener('touchend', release);
             btn.removeEventListener('touchcancel', release);
+            btn.removeEventListener('mousedown', press);
+            btn.removeEventListener('mouseup', release);
+            btn.removeEventListener('mouseleave', release);
+            btn.removeEventListener('click', clickAction);
           });
         };
 
@@ -1231,8 +1250,28 @@ export default function App() {
 
       {/* Main Menu Overlay */}
       {gameMode === 'menu' && (
-        <div id="main-menu" className="overlay">
-          <div className="panel">
+        <div id="main-menu" className="overlay relative overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none z-0">
+            {[...Array(45)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute rounded-full animate-pulse"
+                style={{
+                  top: `${(i * 31) % 100}%`,
+                  left: `${(i * 43) % 100}%`,
+                  width: `${(i % 3) + 2}px`,
+                  height: `${(i % 3) + 2}px`,
+                  backgroundColor: i % 3 === 0 ? '#60a5fa' : i % 5 === 0 ? '#fde047' : '#ffffff',
+                  boxShadow: i % 3 === 0 ? '0 0 10px #3b82f6' : i % 5 === 0 ? '0 0 10px #eab308' : '0 0 8px #ffffff',
+                  opacity: 0.85,
+                  animationDuration: `${1.2 + (i % 3)}s`,
+                  animationDelay: `${(i % 4) * 0.3}s`
+                }}
+              />
+            ))}
+          </div>
+
+          <div className="panel relative z-10">
             <div className="title-text">COSMIC<span>SHOOTER</span></div>
             <button className="btn" onClick={handlePlay}>PLAY</button>
             <button className="btn btn-outline" onClick={() => setShowControls(!showControls)}>CONTROLS</button>
@@ -1271,19 +1310,20 @@ export default function App() {
         <div id="pause-menu" className="overlay relative overflow-hidden">
           {/* Animated Starfield Background */}
           <div className="absolute inset-0 pointer-events-none z-0">
-            {[...Array(35)].map((_, i) => (
+            {[...Array(45)].map((_, i) => (
               <div
                 key={i}
-                className="absolute bg-white rounded-full animate-pulse"
+                className="absolute rounded-full animate-pulse"
                 style={{
-                  top: `${(i * 37) % 100}%`,
-                  left: `${(i * 53) % 100}%`,
-                  width: `${(i % 3) + 1.5}px`,
-                  height: `${(i % 3) + 1.5}px`,
-                  opacity: 0.3 + (i % 7) * 0.1,
-                  boxShadow: i % 3 === 0 ? '0 0 6px #60a5fa' : '0 0 4px #ffffff',
-                  animationDuration: `${1.5 + (i % 4)}s`,
-                  animationDelay: `${(i % 5) * 0.4}s`
+                  top: `${(i * 31) % 100}%`,
+                  left: `${(i * 43) % 100}%`,
+                  width: `${(i % 3) + 2}px`,
+                  height: `${(i % 3) + 2}px`,
+                  backgroundColor: i % 3 === 0 ? '#60a5fa' : i % 5 === 0 ? '#fde047' : '#ffffff',
+                  boxShadow: i % 3 === 0 ? '0 0 10px #3b82f6' : i % 5 === 0 ? '0 0 10px #eab308' : '0 0 8px #ffffff',
+                  opacity: 0.85,
+                  animationDuration: `${1.2 + (i % 3)}s`,
+                  animationDelay: `${(i % 4) * 0.3}s`
                 }}
               />
             ))}
@@ -1303,8 +1343,28 @@ export default function App() {
 
       {/* Game Over Menu Overlay */}
       {gameMode === 'gameover' && (
-        <div id="game-over-menu" className="overlay">
-          <div className="panel">
+        <div id="game-over-menu" className="overlay relative overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none z-0">
+            {[...Array(45)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute rounded-full animate-pulse"
+                style={{
+                  top: `${(i * 31) % 100}%`,
+                  left: `${(i * 43) % 100}%`,
+                  width: `${(i % 3) + 2}px`,
+                  height: `${(i % 3) + 2}px`,
+                  backgroundColor: i % 3 === 0 ? '#60a5fa' : i % 5 === 0 ? '#fde047' : '#ffffff',
+                  boxShadow: i % 3 === 0 ? '0 0 10px #3b82f6' : i % 5 === 0 ? '0 0 10px #eab308' : '0 0 8px #ffffff',
+                  opacity: 0.85,
+                  animationDuration: `${1.2 + (i % 3)}s`,
+                  animationDelay: `${(i % 4) * 0.3}s`
+                }}
+              />
+            ))}
+          </div>
+
+          <div className="panel relative z-10">
             <h2 className="text-4xl font-bold text-red-500 mb-6 font-[Orbitron] tracking-widest">GAME OVER</h2>
             <div className="mb-8 bg-gray-900 bg-opacity-50 p-4 rounded-lg border border-gray-700">
               <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">FINAL SCORE</p>
