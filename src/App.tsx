@@ -472,7 +472,7 @@ export default function App() {
       }
       update(dt: number) {
         let targetX = this.game.player.x + (this.game.player.width / 2) - (this.width / 2) + this.targetOffsetX;
-        let targetY = this.game.player.y + this.targetOffsetY;
+        let targetY = this.game.player.y + (this.game.player.height / 2) - (this.height / 2) + this.targetOffsetY;
         
         this.x += (targetX - this.x) * 0.08 * (dt/16);
         this.y += (targetY - this.y) * 0.08 * (dt/16);
@@ -957,14 +957,26 @@ export default function App() {
       }
 
       updateAllyFormations() {
+        const spacing = 75; // Pixels per concentric ring
+        const slotAngles = [
+          Math.PI,                 // Slot 0: Left
+          0,                       // Slot 1: Right
+          -3 * Math.PI / 4,        // Slot 2: Front-Left
+          -Math.PI / 4,            // Slot 3: Front-Right
+          3 * Math.PI / 4,         // Slot 4: Back-Left
+          Math.PI / 4,             // Slot 5: Back-Right
+          -Math.PI / 2,            // Slot 6: Front-Center
+          Math.PI / 2              // Slot 7: Back-Center
+        ];
+
         this.allies.forEach((ally, index) => {
-          const isLeft = index % 2 === 0;
-          const row = Math.floor(index / 2) + 1;
-          const spacingX = 70; 
-          const spacingY = 60; 
-          
-          ally.targetOffsetX = (isLeft ? -1 : 1) * (row * spacingX);
-          ally.targetOffsetY = this.player.height + (row * spacingY) - 30;
+          const ring = Math.floor(index / 8) + 1;
+          const posIndex = index % 8;
+          const radius = spacing * ring;
+          const angle = slotAngles[posIndex];
+
+          ally.targetOffsetX = Math.cos(angle) * radius;
+          ally.targetOffsetY = Math.sin(angle) * radius;
         });
       }
 
@@ -1094,7 +1106,7 @@ export default function App() {
             } else if (drop.type === 'multiplier') {
               sfx.playPowerup();
               let currentFleet = 1 + this.allies.length;
-              let targetFleet = Math.min(currentFleet * drop.value, 8); 
+              let targetFleet = currentFleet * drop.value; 
               let newShips = targetFleet - currentFleet;
               for(let i = 0; i < newShips; i++) {
                 this.allies.push(new Ally(this, this.player.x, this.player.y));
