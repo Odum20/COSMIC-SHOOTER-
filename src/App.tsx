@@ -59,6 +59,9 @@ export default function App() {
   const [swipeTouchPos, setSwipeTouchPos] = useState<{ x: number; y: number } | null>(null);
   const [pressedButtons, setPressedButtons] = useState<{ [key: string]: boolean }>({});
 
+  const [purchasedFlame, setPurchasedFlame] = useState(false);
+  const [purchasedAlien, setPurchasedAlien] = useState(false);
+
   // Active buff timers for HUD display
   const [activeFlameSecs, setActiveFlameSecs] = useState(0);
   const [activeAlienSecs, setActiveAlienSecs] = useState(0);
@@ -1160,9 +1163,8 @@ export default function App() {
             const multi = Math.floor(Math.random() * 3) + 2; 
             this.game.drops.push(new Drop(this.x, this.y, 'multiplier', multi));
           }
-          else if(rand < 0.54) this.game.drops.push(new Drop(this.x, this.y, 'flame'));
-          else if(rand < 0.66) this.game.drops.push(new Drop(this.x, this.y, 'alien'));
-          else if(rand < 0.74) this.game.drops.push(new Drop(this.x, this.y, 'shield'));
+          else if(rand < 0.45 && purchasedFlame) this.game.drops.push(new Drop(this.x, this.y, 'flame'));
+          else if(rand < 0.48 && purchasedAlien) this.game.drops.push(new Drop(this.x, this.y, 'alien'));
         }
       }
 
@@ -1606,7 +1608,7 @@ export default function App() {
           setActiveAlienSecs(0);
         }
 
-        let currentInterval = Math.max(300, this.baseEnemyInterval - (this.gameTime / 60000) * 800);
+        let currentInterval = Math.max(500, this.baseEnemyInterval - (this.gameTime / 60000) * 400);
 
         if (this.enemyTimer > currentInterval) {
           let numToSpawn = 1 + Math.floor(Math.random() * (this.gameTime / 50000));
@@ -1629,7 +1631,7 @@ export default function App() {
         if (this.asteroidTimer > this.nextAsteroidSpawn) {
           this.asteroids.push(new Asteroid(this));
           this.asteroidTimer = 0;
-          this.nextAsteroidSpawn = 20000 + Math.random() * 25000;
+          this.nextAsteroidSpawn = 30000 + Math.random() * 30000;
         }
         this.asteroids.forEach(a => a.update(dt));
         
@@ -1798,9 +1800,6 @@ export default function App() {
               this.alienHackTimer = 12000;
               setActiveAlienSecs(12);
               sfx.playAlienHack();
-            } else if (drop.type === 'shield') {
-              updateShields(prev => prev + 1);
-              sfx.playPowerup();
             } else if (drop.type === 'multiplier') {
               sfx.playPowerup();
               const MAX_ALLIES = 15;
@@ -2026,6 +2025,7 @@ export default function App() {
       return;
     }
     updateCoins(prev => prev - 30);
+    setPurchasedFlame(true);
     if (gameRef.current?.player && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
       gameRef.current.player.flameTimer = Math.max(0, gameRef.current.player.flameTimer) + 16000;
       setActiveFlameSecs(Math.ceil(gameRef.current.player.flameTimer / 1000));
@@ -2042,6 +2042,7 @@ export default function App() {
       return;
     }
     updateCoins(prev => prev - 50);
+    setPurchasedAlien(true);
     if (gameRef.current && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
       gameRef.current.alienHackTimer = Math.max(0, gameRef.current.alienHackTimer) + 12000;
       setActiveAlienSecs(Math.ceil(gameRef.current.alienHackTimer / 1000));
