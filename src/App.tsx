@@ -18,12 +18,53 @@ export default function App() {
   const [highScore, setHighScore] = useState(parseInt(localStorage.getItem('spaceShooterHighScore') || '0', 10));
   const [lives, setLives] = useState(3);
   const [coins, setCoins] = useState(0);
-  const [energyBars, setEnergyBars] = useState(0);
+  const [energyBars, setEnergyBars] = useState(1);
   const [showControls, setShowControls] = useState(false);
   const [controlMode, setControlMode] = useState<'touch' | 'keyboard'>('touch');
+  const [pressedButtons, setPressedButtons] = useState<{ [key: string]: boolean }>({});
 
   const gameRef = useRef<any>(null);
   const sfxRef = useRef<any>(null);
+
+  const bindControl = (key: string) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch (_) {}
+      setPressedButtons(prev => ({ ...prev, [key]: true }));
+      if (gameRef.current?.input) {
+        gameRef.current.input.setKey(key, true);
+      }
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch (_) {}
+      setPressedButtons(prev => ({ ...prev, [key]: false }));
+      if (gameRef.current?.input) {
+        gameRef.current.input.setKey(key, false);
+      }
+    },
+    onPointerCancel: () => {
+      setPressedButtons(prev => ({ ...prev, [key]: false }));
+      if (gameRef.current?.input) {
+        gameRef.current.input.setKey(key, false);
+      }
+    },
+    onPointerLeave: (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (!e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        setPressedButtons(prev => ({ ...prev, [key]: false }));
+        if (gameRef.current?.input) {
+          gameRef.current.input.setKey(key, false);
+        }
+      }
+    },
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  });
 
   useEffect(() => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -124,70 +165,34 @@ export default function App() {
       keys: { [key: string]: boolean } = {};
       keydownHandler: (e: KeyboardEvent) => void;
       keyupHandler: (e: KeyboardEvent) => void;
-      touchCleanups: (() => void)[] = [];
 
       constructor() {
-        this.keydownHandler = e => { this.keys[e.key.toLowerCase()] = true; };
-        this.keyupHandler = e => { this.keys[e.key.toLowerCase()] = false; };
+        this.keydownHandler = e => { 
+          const k = e.key.toLowerCase();
+          this.keys[k] = true;
+          if (k === ' ') this.keys['space'] = true;
+        };
+        this.keyupHandler = e => { 
+          const k = e.key.toLowerCase();
+          this.keys[k] = false;
+          if (k === ' ') this.keys['space'] = false;
+        };
 
         window.addEventListener('keydown', this.keydownHandler);
         window.addEventListener('keyup', this.keyupHandler);
-
-        const bindTouch = (id: string, key: string) => {
-          const btn = document.getElementById(id);
-          if (!btn) return;
-
-          const press = (e: Event) => {
-            e.preventDefault();
-            this.keys[key] = true;
-            btn.classList.add('active');
-          };
-
-          const release = (e: Event) => {
-            e.preventDefault();
-            this.keys[key] = false;
-            btn.classList.remove('active');
-          };
-
-          const clickAction = (e: Event) => {
-            e.preventDefault();
-            this.keys[key] = true;
-            btn.classList.add('active');
-            setTimeout(() => {
-              this.keys[key] = false;
-              btn.classList.remove('active');
-            }, 120);
-          };
-
-          btn.addEventListener('touchstart', press, { passive: false });
-          btn.addEventListener('touchend', release, { passive: false });
-          btn.addEventListener('touchcancel', release, { passive: false });
-
-          btn.addEventListener('mousedown', press);
-          btn.addEventListener('mouseup', release);
-          btn.addEventListener('mouseleave', release);
-          btn.addEventListener('click', clickAction);
-
-          this.touchCleanups.push(() => {
-            btn.removeEventListener('touchstart', press);
-            btn.removeEventListener('touchend', release);
-            btn.removeEventListener('touchcancel', release);
-            btn.removeEventListener('mousedown', press);
-            btn.removeEventListener('mouseup', release);
-            btn.removeEventListener('mouseleave', release);
-            btn.removeEventListener('click', clickAction);
-          });
-        };
-
-        bindTouch('t-up', 'arrowup');
-        bindTouch('t-down', 'arrowdown');
-        bindTouch('t-left', 'arrowleft');
-        bindTouch('t-right', 'arrowright');
-        bindTouch('t-shoot', 'z');
-        bindTouch('t-special', 'x');
       }
 
-      isPressed(key: string) { return this.keys[key]; }
+      setKey(key: string, pressed: boolean) {
+        const k = key.toLowerCase();
+        this.keys[k] = pressed;
+        if (k === 'z' || k === 'space' || k === ' ') {
+          this.keys['z'] = pressed;
+          this.keys[' '] = pressed;
+          this.keys['space'] = pressed;
+        }
+      }
+
+      isPressed(key: string) { return !!this.keys[key.toLowerCase()]; }
       isAnyMovement() {
         return this.isPressed('w') || this.isPressed('a') || 
                this.isPressed('s') || this.isPressed('d') || 
@@ -198,7 +203,6 @@ export default function App() {
       destroy() {
         window.removeEventListener('keydown', this.keydownHandler);
         window.removeEventListener('keyup', this.keyupHandler);
-        this.touchCleanups.forEach(fn => fn());
       }
     }
 
@@ -254,7 +258,7 @@ export default function App() {
         this.speed = 6;
         this.lives = 3;
         this.maxEnergy = 5;
-        this.specialCharges = 0;
+        this.specialCharges = 3;
         this.shootTimer = 0;
         this.shootInterval = 120;
         this.specialTimer = 0; 
@@ -870,7 +874,7 @@ export default function App() {
         setScore(0);
         setCoins(0);
         setLives(3);
-        setEnergyBars(0);
+        this.updateEnergyHUD();
       }
 
       updateAllyFormations() {
@@ -1183,45 +1187,46 @@ export default function App() {
 
       {/* HUD */}
       {(gameMode === 'playing' || gameMode === 'paused') && (
-        <div id="hud" style={{pointerEvents: 'none'}}>
+        <div id="hud">
           <div className="hud-left">
-            <div className="hud-group">
-              <span className="hud-icon text-red-500">❤️</span>
-              <span className="hud-text">x <span id="lives-display">{lives}</span></span>
-            </div>
-            <div className="hud-group">
-              <span className="hud-icon text-yellow-400">🪙</span>
-              <span className="hud-text"><span id="coins-display">{coins}</span></span>
+            <div className="hud-pill">
+              <div className="hud-stat">
+                <span className="hud-icon text-red-500">❤️</span>
+                <span className="hud-val font-[Orbitron]" id="lives-display">{lives}</span>
+              </div>
+              <div className="hud-sep"></div>
+              <div className="hud-stat">
+                <span className="hud-icon text-yellow-400">🪙</span>
+                <span className="hud-val font-[Orbitron]" id="coins-display">{coins}</span>
+              </div>
             </div>
           </div>
           
           <div className="hud-center">
-            <div className="hud-text text-gray-400 text-xs mb-1">SCORE</div>
-            <div className="hud-text score-display font-[Orbitron]" id="score-display">
+            <div className="score-label">SCORE</div>
+            <div className="score-value font-[Orbitron]" id="score-display">
               {score.toString().padStart(6, '0')}
             </div>
           </div>
 
           <div className="hud-right">
-            <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
-              <div className="hud-group">
-                <span className="hud-icon text-green-400 text-xs mr-1">⚡</span>
-                <div className="energy-bar-container" id="energy-bar">
-                  <div className={`energy-segment ${energyBars >= 1 ? 'filled' : ''}`}></div>
-                  <div className={`energy-segment ${energyBars >= 2 ? 'filled' : ''}`}></div>
-                  <div className={`energy-segment ${energyBars >= 3 ? 'filled' : ''}`}></div>
-                  <div className={`energy-segment ${energyBars >= 4 ? 'filled' : ''}`}></div>
-                  <div className={`energy-segment ${energyBars >= 5 ? 'filled' : ''}`}></div>
-                </div>
+            <div className="hud-pill energy-pill">
+              <span className="hud-icon text-green-400 text-xs">⚡</span>
+              <div className="energy-bar-container" id="energy-bar">
+                <div className={`energy-segment ${energyBars >= 1 ? 'filled' : ''}`}></div>
+                <div className={`energy-segment ${energyBars >= 2 ? 'filled' : ''}`}></div>
+                <div className={`energy-segment ${energyBars >= 3 ? 'filled' : ''}`}></div>
+                <div className={`energy-segment ${energyBars >= 4 ? 'filled' : ''}`}></div>
+                <div className={`energy-segment ${energyBars >= 5 ? 'filled' : ''}`}></div>
               </div>
-              <button 
-                id="pause-btn" 
-                style={{pointerEvents: 'auto'}} 
-                onClick={handlePauseToggle}
-              >
-                ⏸
-              </button>
             </div>
+            <button 
+              id="pause-btn" 
+              onClick={handlePauseToggle}
+              aria-label="Pause Game"
+            >
+              ⏸
+            </button>
           </div>
         </div>
       )}
@@ -1231,19 +1236,61 @@ export default function App() {
         <div id="mobile-controls">
           <div className="touch-joystick">
             <div></div>
-            <button id="t-up" className="t-btn">▲</button>
+            <button 
+              id="t-up" 
+              className={`t-btn ${pressedButtons['arrowup'] ? 'active' : ''}`}
+              {...bindControl('arrowup')}
+              aria-label="Move Up"
+            >
+              ▲
+            </button>
             <div></div>
-            <button id="t-left" className="t-btn">◀</button>
+            <button 
+              id="t-left" 
+              className={`t-btn ${pressedButtons['arrowleft'] ? 'active' : ''}`}
+              {...bindControl('arrowleft')}
+              aria-label="Move Left"
+            >
+              ◀
+            </button>
             <div className="t-btn-center">●</div>
-            <button id="t-right" className="t-btn">▶</button>
+            <button 
+              id="t-right" 
+              className={`t-btn ${pressedButtons['arrowright'] ? 'active' : ''}`}
+              {...bindControl('arrowright')}
+              aria-label="Move Right"
+            >
+              ▶
+            </button>
             <div></div>
-            <button id="t-down" className="t-btn">▼</button>
+            <button 
+              id="t-down" 
+              className={`t-btn ${pressedButtons['arrowdown'] ? 'active' : ''}`}
+              {...bindControl('arrowdown')}
+              aria-label="Move Down"
+            >
+              ▼
+            </button>
             <div></div>
           </div>
           
           <div className="touch-actions">
-            <button id="t-special" className="t-btn-special">SPEC</button>
-            <button id="t-shoot" className="t-btn-shoot">SHOOT</button>
+            <button 
+              id="t-special" 
+              className={`t-btn-special ${pressedButtons['x'] ? 'active' : ''}`}
+              {...bindControl('x')}
+              aria-label="Special Attack"
+            >
+              SPEC
+            </button>
+            <button 
+              id="t-shoot" 
+              className={`t-btn-shoot ${pressedButtons['z'] ? 'active' : ''}`}
+              {...bindControl('z')}
+              aria-label="Shoot Laser"
+            >
+              SHOOT
+            </button>
           </div>
         </div>
       )}
