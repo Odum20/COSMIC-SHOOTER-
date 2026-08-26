@@ -1,0 +1,7 @@
+{
+  "name": "Cosmic Shooter",
+  "description": "An action-packed 2D arcade space shooter game with retro synth sound effects, mobile touch controls, powerups, and asteroids.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
