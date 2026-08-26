@@ -3,33 +3,109 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useEffect, useState, useRef } from 'react';
 
 declare const Tone: any;
+
+interface KeyBindings {
+  shoot: string;
+  special: string;
+  shield: string;
+}
+
+const DEFAULT_KEY_BINDINGS: KeyBindings = {
+  shoot: 'z',
+  special: 'x',
+  shield: 'c',
+};
 
 export default function App() {
   const [gameMode, setGameMode] = useState<'menu' | 'playing' | 'paused' | 'gameover'>('menu');
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(parseInt(localStorage.getItem('spaceShooterHighScore') || '0', 10));
   const [lives, setLives] = useState(3);
-  const [coins, setCoins] = useState(0);
+  const [coins, setCoins] = useState(() => {
+    try {
+      const saved = localStorage.getItem('spaceShooterCoins');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [shieldsCount, setShieldsCount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('spaceShooterShields');
+      return saved !== null ? Math.max(0, parseInt(saved, 10)) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [keyBindings, setKeyBindings] = useState<KeyBindings>(() => {
+    try {
+      const saved = localStorage.getItem('spaceShooterKeyBindings');
+      if (saved) return { ...DEFAULT_KEY_BINDINGS, ...JSON.parse(saved) };
+    } catch {}
+    return DEFAULT_KEY_BINDINGS;
+  });
+
   const [energyBars, setEnergyBars] = useState(1);
   const [showControls, setShowControls] = useState(false);
+  const [showUpgrades, setShowUpgrades] = useState(false);
+  const [upgradesReturnMode, setUpgradesReturnMode] = useState<'menu' | 'playing' | 'paused' | 'gameover'>('menu');
+  const [rebindAction, setRebindAction] = useState<null | keyof KeyBindings>(null);
   const [controlMode, setControlMode] = useState<'touch' | 'keyboard'>('touch');
   const [navMode, setNavMode] = useState<'dpad' | 'swipe'>('swipe');
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const [swipeTouchPos, setSwipeTouchPos] = useState<{ x: number; y: number } | null>(null);
   const [pressedButtons, setPressedButtons] = useState<{ [key: string]: boolean }>({});
 
+  // Active buff timers for HUD display
+  const [activeFlameSecs, setActiveFlameSecs] = useState(0);
+  const [activeAlienSecs, setActiveAlienSecs] = useState(0);
+  const [shieldActiveStatus, setShieldActiveStatus] = useState(false);
+  const [shieldHpStatus, setShieldHpStatus] = useState(4);
+
   const gameRef = useRef<any>(null);
   const sfxRef = useRef<any>(null);
   const swipeAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const hasShownHintRef = useRef(false);
+  const keyBindingsRef = useRef<KeyBindings>(keyBindings);
+  keyBindingsRef.current = keyBindings;
+  const shieldsCountRef = useRef<number>(shieldsCount);
+  shieldsCountRef.current = shieldsCount;
+  const pendingFlameRef = useRef(false);
+  const pendingAlienRef = useRef(false);
+
+  const updateCoins = (updater: number | ((prev: number) => number)) => {
+    setCoins(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        localStorage.setItem('spaceShooterCoins', next.toString());
+      } catch {}
+      return next;
+    });
+  };
+
+  const updateShields = (updater: number | ((prev: number) => number)) => {
+    setShieldsCount(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const clamped = Math.max(0, next);
+      try {
+        localStorage.setItem('spaceShooterShields', clamped.toString());
+      } catch {}
+      if (gameRef.current) {
+        gameRef.current.shieldsCount = clamped;
+      }
+      return clamped;
+    });
+  };
+
+  const saveKeyBindings = (newBindings: KeyBindings) => {
+    setKeyBindings(newBindings);
+    try {
+      localStorage.setItem('spaceShooterKeyBindings', JSON.stringify(newBindings));
+    } catch {}
+  };
 
   const triggerSwipeTutorial = () => {
     setShowSwipeHint(true);
@@ -96,15 +172,15 @@ export default function App() {
     }
   };
 
-  const bindControl = (key: string) => ({
+  const bindControl = (actionOrKey: string) => ({
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch (_) {}
-      setPressedButtons(prev => ({ ...prev, [key]: true }));
+      setPressedButtons(prev => ({ ...prev, [actionOrKey]: true }));
       if (gameRef.current?.input) {
-        gameRef.current.input.setKey(key, true);
+        gameRef.current.input.setKey(actionOrKey, true);
       }
     },
     onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -114,27 +190,50 @@ export default function App() {
           e.currentTarget.releasePointerCapture(e.pointerId);
         }
       } catch (_) {}
-      setPressedButtons(prev => ({ ...prev, [key]: false }));
+      setPressedButtons(prev => ({ ...prev, [actionOrKey]: false }));
       if (gameRef.current?.input) {
-        gameRef.current.input.setKey(key, false);
+        gameRef.current.input.setKey(actionOrKey, false);
       }
     },
     onPointerCancel: () => {
-      setPressedButtons(prev => ({ ...prev, [key]: false }));
+      setPressedButtons(prev => ({ ...prev, [actionOrKey]: false }));
       if (gameRef.current?.input) {
-        gameRef.current.input.setKey(key, false);
+        gameRef.current.input.setKey(actionOrKey, false);
       }
     },
     onPointerLeave: (e: React.PointerEvent<HTMLButtonElement>) => {
       if (!e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-        setPressedButtons(prev => ({ ...prev, [key]: false }));
+        setPressedButtons(prev => ({ ...prev, [actionOrKey]: false }));
         if (gameRef.current?.input) {
-          gameRef.current.input.setKey(key, false);
+          gameRef.current.input.setKey(actionOrKey, false);
         }
       }
     },
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   });
+
+  // Rebind key listener when armory rebinding is active
+  useEffect(() => {
+    if (!rebindAction) return;
+
+    const handleRebindKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const key = e.key.toLowerCase();
+      if (key === 'escape') {
+        setRebindAction(null);
+        return;
+      }
+      saveKeyBindings({
+        ...keyBindingsRef.current,
+        [rebindAction]: key,
+      });
+      setRebindAction(null);
+    };
+
+    window.addEventListener('keydown', handleRebindKey, { capture: true });
+    return () => window.removeEventListener('keydown', handleRebindKey, { capture: true });
+  }, [rebindAction]);
 
   useEffect(() => {
     const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
@@ -151,10 +250,12 @@ export default function App() {
       lastBoomTime: 0,
       lastPowerupTime: 0,
       lastSpecialTime: 0,
+      lastFlameTime: 0,
       shootSynth: null as any,
       boomSynth: null as any,
       powerupSynth: null as any,
       specialSynth: null as any,
+      shieldSynth: null as any,
       init() {
         if (this.initialized || typeof Tone === 'undefined') return;
         try {
@@ -180,6 +281,12 @@ export default function App() {
             envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.5 }
           }).toDestination();
           this.specialSynth.volume.value = -10;
+
+          this.shieldSynth = new Tone.Synth({
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.05, decay: 0.3, sustain: 0.3, release: 0.8 }
+          }).toDestination();
+          this.shieldSynth.volume.value = -12;
           
           this.initialized = true;
         } catch (e) {
@@ -195,6 +302,15 @@ export default function App() {
           this.shootSynth.triggerAttackRelease("C5", "32n", now);
           this.shootSynth.detune.setValueAtTime(0, now);
           this.shootSynth.detune.rampTo(-1200, 0.1);
+        } catch(e) {}
+      },
+      playFlame() {
+        if (!this.initialized || !this.boomSynth) return;
+        const now = Tone.now();
+        if (now - this.lastFlameTime < 0.09) return;
+        this.lastFlameTime = now;
+        try {
+          this.boomSynth.triggerAttackRelease("16n", now);
         } catch(e) {}
       },
       playBoom() {
@@ -222,6 +338,30 @@ export default function App() {
         this.lastSpecialTime = now;
         try {
           this.specialSynth.triggerAttackRelease("C3", "8n", now);
+        } catch(e) {}
+      },
+      playShield() {
+        if (!this.initialized || !this.powerupSynth) return;
+        try {
+          this.powerupSynth.triggerAttackRelease(["E5", "G#5", "B5", "E6"], "16n");
+        } catch(e) {}
+      },
+      playShieldHit() {
+        if (!this.initialized || !this.shieldSynth) return;
+        try {
+          this.shieldSynth.triggerAttackRelease("A4", "32n");
+        } catch(e) {}
+      },
+      playShieldBreak() {
+        if (!this.initialized || !this.boomSynth) return;
+        try {
+          this.boomSynth.triggerAttackRelease("4n");
+        } catch(e) {}
+      },
+      playAlienHack() {
+        if (!this.initialized || !this.powerupSynth) return;
+        try {
+          this.powerupSynth.triggerAttackRelease(["D#5", "F#5", "A#5", "D#6"], "8n");
         } catch(e) {}
       }
     };
@@ -310,6 +450,217 @@ export default function App() {
       }
     }
 
+    class FireBall {
+      x: number;
+      y: number;
+      speed: number;
+      radius: number;
+      maxRadius: number;
+      type: string;
+      width: number;
+      height: number;
+      markedForDeletion: boolean;
+      particles: { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string }[];
+
+      constructor(x: number, y: number) {
+        this.x = x;
+        this.y = y;
+        this.speed = -10.5;
+        this.radius = 24;
+        this.maxRadius = 75; // Approx 150px diameter (4cm on screen)
+        this.width = this.radius * 2;
+        this.height = this.radius * 2;
+        this.type = 'fireball';
+        this.markedForDeletion = false;
+        this.particles = [];
+      }
+
+      update(dt: number, game: Game) {
+        this.y += this.speed * (dt / 16);
+        if (this.radius < this.maxRadius) {
+          this.radius += 2.8 * (dt / 16);
+          this.width = this.radius * 2;
+          this.height = this.radius * 2;
+        }
+
+        // Spawn burning flame particle aura
+        for (let i = 0; i < 2; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * (this.radius * 0.7);
+          this.particles.push({
+            x: this.x + Math.cos(angle) * dist,
+            y: this.y + Math.sin(angle) * dist,
+            vx: (Math.random() - 0.5) * 3,
+            vy: Math.random() * 3 + 1,
+            life: 0,
+            maxLife: 12 + Math.random() * 12,
+            color: Math.random() > 0.4 ? '#f59e0b' : '#ef4444'
+          });
+        }
+
+        this.particles.forEach(p => {
+          p.x += p.vx * (dt / 16);
+          p.y += p.vy * (dt / 16);
+          p.life += (dt / 16);
+        });
+        this.particles = this.particles.filter(p => p.life < p.maxLife);
+
+        if (this.y < -this.radius * 2) {
+          this.markedForDeletion = true;
+        }
+
+        // Incinerate enemy projectiles
+        game.projectiles.forEach(p => {
+          if (p.type === 'enemy' || p.type === 'hacked_projectile') {
+            const dx = p.x - this.x;
+            const dy = p.y - this.y;
+            if (Math.sqrt(dx * dx + dy * dy) < this.radius + p.width) {
+              p.markedForDeletion = true;
+            }
+          }
+        });
+
+        // Incinerate enemies in radius
+        game.enemies.forEach(enemy => {
+          if (!enemy.markedForDeletion) {
+            const dx = (enemy.x + enemy.width / 2) - this.x;
+            const dy = (enemy.y + enemy.height / 2) - this.y;
+            if (Math.sqrt(dx * dx + dy * dy) < this.radius + Math.max(enemy.width, enemy.height) / 2) {
+              enemy.hp -= 2;
+              if (enemy.hp <= 0) {
+                enemy.hit();
+              }
+            }
+          }
+        });
+
+        // Scorch asteroids
+        game.asteroids.forEach(asteroid => {
+          const dx = asteroid.x - this.x;
+          const dy = asteroid.y - this.y;
+          if (Math.sqrt(dx * dx + dy * dy) < this.radius + asteroid.radius) {
+            asteroid.radius -= 0.4 * (dt / 16);
+            if (asteroid.radius < 18) {
+              asteroid.markedForDeletion = true;
+              game.explosions.push(new Explosion(asteroid.x, asteroid.y, 'large'));
+              sfx.playBoom();
+              game.addScore(100);
+            }
+          }
+        });
+      }
+
+      draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        
+        // Draw flame aura particles
+        this.particles.forEach(p => {
+          const alpha = 1 - (p.life / p.maxLife);
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = alpha * 0.8;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(2, 6 * alpha), 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        // Draw expanding core plasma
+        ctx.globalAlpha = 0.92;
+        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.2, '#fef08a');
+        grad.addColorStop(0.5, '#f59e0b');
+        grad.addColorStop(0.85, '#ef4444');
+        grad.addColorStop(1, 'rgba(185, 28, 28, 0)');
+        
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.85, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+
+    class HackedProjectile {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      type: string;
+      width: number;
+      height: number;
+      markedForDeletion: boolean;
+
+      constructor(x: number, y: number, vx: number, vy: number) {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = vy;
+        this.type = 'hacked_projectile';
+        this.width = 6;
+        this.height = 6;
+        this.markedForDeletion = false;
+      }
+
+      update(dt: number) {
+        this.x += this.vx * (dt / 16);
+        this.y += this.vy * (dt / 16);
+        if (this.x < -30 || this.x > GAME_WIDTH + 30 || this.y < -30 || this.y > GAME_HEIGHT + 30) {
+          this.markedForDeletion = true;
+        }
+      }
+
+      draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        ctx.fillStyle = '#c084fc';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#a855f7';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    class ShieldSpark {
+      x: number;
+      y: number;
+      radius: number;
+      alpha: number;
+      markedForDeletion: boolean;
+
+      constructor(x: number, y: number) {
+        this.x = x;
+        this.y = y;
+        this.radius = 6;
+        this.alpha = 1;
+        this.markedForDeletion = false;
+      }
+
+      update(dt: number) {
+        this.radius += 2.5 * (dt / 16);
+        this.alpha -= 0.08 * (dt / 16);
+        if (this.alpha <= 0) this.markedForDeletion = true;
+      }
+
+      draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     class Player {
       game: Game;
       width: number;
@@ -325,6 +676,17 @@ export default function App() {
       specialTimer: number;
       invulnerableTimer: number;
 
+      // Shield System
+      shieldActive: boolean;
+      shieldHp: number;
+      shieldMaxHp: number;
+      shieldAngle: number;
+
+      // Flamethrower Powerup System
+      flameTimer: number;
+      flameInterval: number;
+      flameShootTimer: number;
+
       constructor(game: Game) {
         this.game = game;
         this.width = 50;
@@ -339,6 +701,27 @@ export default function App() {
         this.shootInterval = 120;
         this.specialTimer = 0; 
         this.invulnerableTimer = 0;
+
+        this.shieldActive = false;
+        this.shieldHp = 4;
+        this.shieldMaxHp = 4;
+        this.shieldAngle = 0;
+
+        this.flameTimer = 0;
+        this.flameInterval = 180;
+        this.flameShootTimer = 0;
+      }
+
+      activateShield() {
+        if (this.shieldActive) return;
+        if (this.game.shieldsCount > 0) {
+          this.game.consumeShield();
+          this.shieldActive = true;
+          this.shieldHp = this.shieldMaxHp;
+          sfx.playShield();
+          setShieldActiveStatus(true);
+          setShieldHpStatus(this.shieldMaxHp);
+        }
       }
 
       update(dt: number) {
@@ -363,14 +746,48 @@ export default function App() {
         this.x = Math.max(0, Math.min(GAME_WIDTH - this.width, this.x));
         this.y = Math.max(0, Math.min(GAME_HEIGHT - this.height, this.y));
 
-        if (this.shootTimer > 0) this.shootTimer -= dt;
-        if ((this.game.input.isPressed('z') || this.game.input.isPressed(' ')) && this.shootTimer <= 0) {
-          this.shoot();
-          this.shootTimer = this.shootInterval;
+        // Keybindings resolution
+        const bindings = keyBindingsRef.current;
+        const isShootPressed = this.game.input.isPressed(bindings.shoot) || this.game.input.isPressed(' ') || this.game.input.isPressed('shoot');
+        const isSpecialPressed = this.game.input.isPressed(bindings.special) || this.game.input.isPressed('special');
+        const isShieldPressed = this.game.input.isPressed(bindings.shield) || this.game.input.isPressed('shield') || this.game.input.isPressed('c');
+
+        // Trigger Shield
+        if (isShieldPressed) {
+          this.activateShield();
         }
 
+        // Rotate kinetic shield
+        if (this.shieldActive) {
+          this.shieldAngle += 0.045 * (dt / 16);
+        }
+
+        // Flamethrower Timer update
+        if (this.flameTimer > 0) {
+          this.flameTimer -= dt;
+          setActiveFlameSecs(Math.max(0, Math.ceil(this.flameTimer / 1000)));
+        } else {
+          setActiveFlameSecs(0);
+        }
+
+        // Shooting logic
+        if (this.shootTimer > 0) this.shootTimer -= dt;
+        if (this.flameShootTimer > 0) this.flameShootTimer -= dt;
+
+        if (isShootPressed) {
+          if (this.flameTimer > 0 && this.flameShootTimer <= 0) {
+            this.shootFlame();
+            this.flameShootTimer = this.flameInterval;
+          }
+          if (this.shootTimer <= 0) {
+            this.shoot();
+            this.shootTimer = this.shootInterval;
+          }
+        }
+
+        // Special Missile
         if (this.specialTimer > 0) this.specialTimer -= dt;
-        if (this.game.input.isPressed('x') && this.specialTimer <= 0 && this.specialCharges > 0) {
+        if (isSpecialPressed && this.specialTimer <= 0 && this.specialCharges > 0) {
           this.fireSpecial();
           this.specialTimer = 500;
           this.specialCharges--;
@@ -383,6 +800,11 @@ export default function App() {
       shoot() {
         this.game.projectiles.push(new Projectile(this.x + this.width / 2, this.y, -12, 'player'));
         sfx.playShoot();
+      }
+
+      shootFlame() {
+        this.game.projectiles.push(new FireBall(this.x + this.width / 2, this.y - 10));
+        sfx.playFlame();
       }
       
       fireSpecial() {
@@ -415,16 +837,18 @@ export default function App() {
         ctx.save();
         ctx.translate(this.x, this.y);
         
-        ctx.fillStyle = '#60a5fa';
-        if (this.game.input.isAnyMovement()) {
-          ctx.fillStyle = '#f59e0b';
+        // Thruster flame
+        ctx.fillStyle = this.flameTimer > 0 ? '#ef4444' : '#60a5fa';
+        if (this.game.input.isAnyMovement() || this.flameTimer > 0) {
+          ctx.fillStyle = this.flameTimer > 0 ? '#f97316' : '#f59e0b';
           ctx.beginPath();
-          ctx.moveTo(this.width/2 - 10, this.height);
-          ctx.lineTo(this.width/2 + 10, this.height);
-          ctx.lineTo(this.width/2, this.height + 15 + Math.random() * 15);
+          ctx.moveTo(this.width/2 - 12, this.height);
+          ctx.lineTo(this.width/2 + 12, this.height);
+          ctx.lineTo(this.width/2, this.height + (this.flameTimer > 0 ? 26 : 15) + Math.random() * 15);
           ctx.fill();
         }
 
+        // Ship hull
         ctx.fillStyle = '#e2e8f0'; 
         ctx.beginPath();
         ctx.moveTo(this.width/2, 0); 
@@ -435,14 +859,81 @@ export default function App() {
         ctx.closePath();
         ctx.fill();
 
-        ctx.fillStyle = '#38bdf8';
+        // Canopy
+        ctx.fillStyle = this.flameTimer > 0 ? '#f59e0b' : '#38bdf8';
         ctx.beginPath();
         ctx.ellipse(this.width/2, this.height/2 - 5, 8, 15, 0, 0, Math.PI * 2);
         ctx.fill();
         
+        // Wings/Cannons
         ctx.fillStyle = '#3b82f6';
         ctx.fillRect(5, this.height/2 + 5, 5, 15);
         ctx.fillRect(this.width - 10, this.height/2 + 5, 5, 15);
+
+        // Flamethrower Cannons Glow
+        if (this.flameTimer > 0) {
+          ctx.fillStyle = '#ef4444';
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = '#f97316';
+          ctx.beginPath();
+          ctx.arc(this.width/2, 2, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Orbiting Kinetic Energy Shield Drawing
+        if (this.shieldActive) {
+          const centerX = this.width / 2;
+          const centerY = this.height / 2;
+          const shieldRadius = 46;
+          const shieldPulse = Math.sin(Date.now() * 0.006) * 3;
+          const curRadius = shieldRadius + shieldPulse;
+
+          // Glowing barrier aura
+          const glow = ctx.createRadialGradient(centerX, centerY, curRadius * 0.6, centerX, centerY, curRadius + 10);
+          glow.addColorStop(0, 'rgba(56, 189, 248, 0.04)');
+          glow.addColorStop(0.8, 'rgba(56, 189, 248, 0.28)');
+          glow.addColorStop(1, 'rgba(14, 165, 233, 0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, curRadius + 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Shield perimeter line
+          ctx.strokeStyle = `rgba(56, 189, 248, ${0.45 + (this.shieldHp / this.shieldMaxHp) * 0.5})`;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, curRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // 3 Orbiting kinetic satellite nodes
+          const nodeCount = 3;
+          for (let i = 0; i < nodeCount; i++) {
+            const nodeAngle = this.shieldAngle + (i * (Math.PI * 2 / nodeCount));
+            const nodeX = centerX + Math.cos(nodeAngle) * curRadius;
+            const nodeY = centerY + Math.sin(nodeAngle) * curRadius;
+            
+            ctx.fillStyle = '#38bdf8';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0284c7';
+            ctx.beginPath();
+            ctx.arc(nodeX, nodeY, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Shield HP Arc Segments
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 3.5;
+          const segGap = 0.16;
+          for (let i = 0; i < this.shieldMaxHp; i++) {
+            if (i < this.shieldHp) {
+              const startA = (i * (Math.PI * 2 / this.shieldMaxHp)) - Math.PI / 2 + segGap / 2;
+              const endA = ((i + 1) * (Math.PI * 2 / this.shieldMaxHp)) - Math.PI / 2 - segGap / 2;
+              ctx.beginPath();
+              ctx.arc(centerX, centerY, curRadius + 6, startA, endA);
+              ctx.stroke();
+            }
+          }
+        }
 
         ctx.restore();
       }
@@ -570,6 +1061,12 @@ export default function App() {
       frequency: number;
       startX: number;
 
+      // Alien Mind-Hack state
+      isHacked: boolean;
+      hackedAngle: number;
+      hackedTurnTimer: number;
+      hackedShootTimer: number;
+
       constructor(game: Game) {
         this.game = game;
         this.width = 40;
@@ -583,18 +1080,70 @@ export default function App() {
         this.amplitude = Math.random() * 40 + 10;
         this.frequency = Math.random() * 0.05 + 0.01;
         this.startX = this.x;
-      }
-      update(dt: number) {
-        this.y += this.speed * (dt/16);
-        this.x = this.startX + Math.sin(this.y * this.frequency) * this.amplitude;
-        this.x = Math.max(0, Math.min(GAME_WIDTH - this.width, this.x));
 
-        if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
-        
-        if (Math.random() < 0.005) {
-          this.game.projectiles.push(new Projectile(this.x + this.width/2, this.y + this.height, 6 * (GAME_HEIGHT/800), 'enemy'));
+        this.isHacked = false;
+        this.hackedAngle = (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+        this.hackedTurnTimer = 0;
+        this.hackedShootTimer = Math.random() * 300;
+      }
+
+      update(dt: number) {
+        if (this.game.alienHackTimer > 0) {
+          if (!this.isHacked) {
+            this.isHacked = true;
+            this.hackedAngle = Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2;
+          }
+
+          this.hackedTurnTimer += dt;
+          if (this.hackedTurnTimer > 700) {
+            this.hackedTurnTimer = 0;
+            // Target nearest enemy ship for friendly fire
+            let closestOther: Enemy | null = null;
+            let closestDist = 99999;
+            this.game.enemies.forEach(other => {
+              if (other !== this && !other.markedForDeletion) {
+                const d = Math.hypot(other.x - this.x, other.y - this.y);
+                if (d < closestDist) {
+                  closestDist = d;
+                  closestOther = other;
+                }
+              }
+            });
+
+            if (closestOther) {
+              this.hackedAngle = Math.atan2((closestOther as Enemy).y - this.y, (closestOther as Enemy).x - this.x);
+            } else {
+              this.hackedAngle = (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+            }
+          }
+
+          this.x += Math.cos(this.hackedAngle) * this.speed * 1.8 * (dt / 16);
+          this.y += Math.sin(this.hackedAngle) * this.speed * 1.2 * (dt / 16);
+          this.x = Math.max(10, Math.min(GAME_WIDTH - this.width - 10, this.x));
+          this.y = Math.max(10, Math.min(GAME_HEIGHT - this.height - 120, this.y));
+
+          this.hackedShootTimer -= dt;
+          if (this.hackedShootTimer <= 0) {
+            this.hackedShootTimer = 350 + Math.random() * 250;
+            const projSpeed = 9;
+            const pvx = Math.cos(this.hackedAngle) * projSpeed;
+            const pvy = Math.sin(this.hackedAngle) * projSpeed;
+            this.game.projectiles.push(new HackedProjectile(this.x + this.width/2, this.y + this.height/2, pvx, pvy));
+          }
+        } else {
+          this.isHacked = false;
+          this.y += this.speed * (dt/16);
+          this.x = this.startX + Math.sin(this.y * this.frequency) * this.amplitude;
+          this.x = Math.max(0, Math.min(GAME_WIDTH - this.width, this.x));
+
+          if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
+          
+          if (Math.random() < 0.005) {
+            this.game.projectiles.push(new Projectile(this.x + this.width/2, this.y + this.height, 6 * (GAME_HEIGHT/800), 'enemy'));
+          }
         }
       }
+
       hit() {
         this.hp--;
         if(this.hp <= 0) {
@@ -605,18 +1154,36 @@ export default function App() {
           
           let rand = Math.random();
           if(rand < 0.05) this.game.drops.push(new Drop(this.x, this.y, 'heart'));
-          else if(rand < 0.15) this.game.drops.push(new Drop(this.x, this.y, 'coin'));
-          else if(rand < 0.25) this.game.drops.push(new Drop(this.x, this.y, 'energy'));
-          else if(rand < 0.30) {
+          else if(rand < 0.20) this.game.drops.push(new Drop(this.x, this.y, 'coin'));
+          else if(rand < 0.32) this.game.drops.push(new Drop(this.x, this.y, 'energy'));
+          else if(rand < 0.42) {
             const multi = Math.floor(Math.random() * 3) + 2; 
             this.game.drops.push(new Drop(this.x, this.y, 'multiplier', multi));
           }
+          else if(rand < 0.54) this.game.drops.push(new Drop(this.x, this.y, 'flame'));
+          else if(rand < 0.66) this.game.drops.push(new Drop(this.x, this.y, 'alien'));
+          else if(rand < 0.74) this.game.drops.push(new Drop(this.x, this.y, 'shield'));
         }
       }
+
       draw(ctx: CanvasRenderingContext2D) {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.fillStyle = '#4b5563';
+
+        if (this.isHacked) {
+          // Mind-control holographic aura
+          ctx.strokeStyle = '#c084fc';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(this.width/2, this.height/2, this.width * 0.7, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.font = '16px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('👽', this.width/2, -6);
+        }
+
+        ctx.fillStyle = this.isHacked ? '#7e22ce' : '#4b5563';
         ctx.beginPath();
         ctx.moveTo(this.width/2, this.height); 
         ctx.lineTo(this.width, 10);
@@ -626,12 +1193,12 @@ export default function App() {
         ctx.closePath();
         ctx.fill();
         
-        ctx.fillStyle = '#ef4444';
+        ctx.fillStyle = this.isHacked ? '#a855f7' : '#ef4444';
         ctx.beginPath();
         ctx.arc(this.width/2, this.height/2 + 5, 5, 0, Math.PI*2);
         ctx.fill();
         ctx.shadowBlur = 10;
-        ctx.shadowColor = '#ef4444';
+        ctx.shadowColor = ctx.fillStyle;
         ctx.restore();
       }
     }
@@ -710,7 +1277,7 @@ export default function App() {
           }
         });
         game.projectiles.forEach(proj => {
-          if (proj.type === 'enemy') {
+          if (proj.type === 'enemy' || proj.type === 'hacked_projectile') {
             const pDistance = Math.sqrt(Math.pow(this.x - proj.x, 2) + Math.pow(this.y - proj.y, 2));
             if (pDistance <= this.maxRadius) proj.markedForDeletion = true;
           }
@@ -810,6 +1377,15 @@ export default function App() {
         } else if (this.type === 'energy') {
           ctx.font = '22px Arial';
           ctx.fillText('⚡', this.x, this.y);
+        } else if (this.type === 'flame') {
+          ctx.font = '22px Arial';
+          ctx.fillText('🔥', this.x, this.y);
+        } else if (this.type === 'alien') {
+          ctx.font = '22px Arial';
+          ctx.fillText('👽', this.x, this.y);
+        } else if (this.type === 'shield') {
+          ctx.font = '22px Arial';
+          ctx.fillText('🛡️', this.x, this.y);
         } else if (this.type === 'multiplier') {
           ctx.font = 'bold 18px Orbitron, sans-serif';
           ctx.fillStyle = '#c084fc';
@@ -927,8 +1503,8 @@ export default function App() {
       starfield: Starfield;
       player!: Player;
       enemies: Enemy[] = [];
-      projectiles: (Projectile | SpecialMissile)[] = [];
-      explosions: (Explosion | AreaExplosion)[] = [];
+      projectiles: (Projectile | SpecialMissile | FireBall | HackedProjectile)[] = [];
+      explosions: (Explosion | AreaExplosion | ShieldSpark)[] = [];
       drops: Drop[] = [];
       allies: Ally[] = [];
       asteroids: Asteroid[] = [];
@@ -937,6 +1513,9 @@ export default function App() {
       baseEnemyInterval = 1200;
       asteroidTimer = 0;
       nextAsteroidSpawn = 20000 + Math.random() * 25000;
+
+      shieldsCount = shieldsCountRef.current;
+      alienHackTimer = 0;
 
       constructor() {
         this.input = new InputHandler();
@@ -956,10 +1535,33 @@ export default function App() {
         this.gameTime = 0;
         this.asteroidTimer = 0;
         this.nextAsteroidSpawn = 20000 + Math.random() * 25000;
+        this.shieldsCount = shieldsCountRef.current;
+        this.alienHackTimer = 0;
         setScore(0);
-        setCoins(0);
         setLives(3);
+        setShieldActiveStatus(false);
+        
+        if (pendingFlameRef.current) {
+          this.player.flameTimer = 16000;
+          setActiveFlameSecs(16);
+          pendingFlameRef.current = false;
+        } else {
+          setActiveFlameSecs(0);
+        }
+
+        if (pendingAlienRef.current) {
+          this.alienHackTimer = 12000;
+          setActiveAlienSecs(12);
+          pendingAlienRef.current = false;
+        } else {
+          setActiveAlienSecs(0);
+        }
+
         this.updateEnergyHUD();
+      }
+
+      consumeShield() {
+        updateShields(prev => Math.max(0, prev - 1));
       }
 
       updateAllyFormations() {
@@ -978,8 +1580,9 @@ export default function App() {
         this.allies.forEach((ally, index) => {
           const ring = Math.floor(index / 8) + 1;
           const posIndex = index % 8;
-          const radius = spacing * ring;
-          const angle = slotAngles[posIndex];
+          const radius = ring === 1 ? spacing : spacing * 1.75;
+          const angleOffset = ring === 2 ? Math.PI / 8 : 0; // Stagger second ring so fire lines never overlap
+          const angle = slotAngles[posIndex] + angleOffset;
 
           ally.targetOffsetX = Math.cos(angle) * radius;
           ally.targetOffsetY = Math.sin(angle) * radius;
@@ -996,6 +1599,13 @@ export default function App() {
         this.player.update(dt);
         this.gameTime += dt;
 
+        if (this.alienHackTimer > 0) {
+          this.alienHackTimer -= dt;
+          setActiveAlienSecs(Math.max(0, Math.ceil(this.alienHackTimer / 1000)));
+        } else {
+          setActiveAlienSecs(0);
+        }
+
         let currentInterval = Math.max(300, this.baseEnemyInterval - (this.gameTime / 60000) * 800);
 
         if (this.enemyTimer > currentInterval) {
@@ -1008,7 +1618,10 @@ export default function App() {
           this.enemyTimer += dt;
         }
 
-        this.projectiles.forEach(p => p.update(dt));
+        this.projectiles.forEach(p => {
+          if (p instanceof FireBall) (p as FireBall).update(dt, this);
+          else p.update(dt);
+        });
         this.enemies.forEach(e => e.update(dt));
         this.allies.forEach(a => a.update(dt));
         
@@ -1047,7 +1660,7 @@ export default function App() {
         };
 
         this.projectiles.forEach(proj => {
-          if (proj.type === 'player' || proj.type === 'special_missile' || proj.type === 'ally') {
+          if (proj.type === 'player' || proj.type === 'special_missile' || proj.type === 'ally' || proj.type === 'hacked_projectile') {
             this.enemies.forEach(enemy => {
               if (!enemy.markedForDeletion) {
                 let pLeft = proj.x - proj.width/2;
@@ -1067,7 +1680,20 @@ export default function App() {
           } else if (proj.type === 'enemy') {
             if (rectIntersect(proj.x - proj.width/2, proj.y, proj.width, proj.height, this.player.x, this.player.y, this.player.width, this.player.height)) {
               proj.markedForDeletion = true;
-              this.player.hit();
+              if (this.player.shieldActive) {
+                this.player.shieldHp--;
+                sfx.playShieldHit();
+                this.explosions.push(new ShieldSpark(proj.x, proj.y));
+                setShieldHpStatus(this.player.shieldHp);
+                if (this.player.shieldHp <= 0) {
+                  this.player.shieldActive = false;
+                  setShieldActiveStatus(false);
+                  sfx.playShieldBreak();
+                  this.explosions.push(new Explosion(this.player.x + this.player.width/2, this.player.y + this.player.height/2, 'small'));
+                }
+              } else {
+                this.player.hit();
+              }
             } else {
               for (let ally of this.allies) {
                 if (!ally.markedForDeletion && rectIntersect(proj.x - proj.width/2, proj.y, proj.width, proj.height, ally.x, ally.y, ally.width, ally.height)) {
@@ -1087,7 +1713,18 @@ export default function App() {
             enemy.markedForDeletion = true;
             this.explosions.push(new Explosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2, 'medium'));
             sfx.playBoom();
-            this.player.hit();
+            if (this.player.shieldActive) {
+              this.player.shieldHp -= 2;
+              sfx.playShieldHit();
+              setShieldHpStatus(this.player.shieldHp);
+              if (this.player.shieldHp <= 0) {
+                this.player.shieldActive = false;
+                setShieldActiveStatus(false);
+                sfx.playShieldBreak();
+              }
+            } else {
+              this.player.hit();
+            }
             return;
           }
 
@@ -1106,6 +1743,17 @@ export default function App() {
           let dist = Math.sqrt(dx * dx + dy * dy);
           
           if (dist < asteroid.radius + Math.min(this.player.width, this.player.height) / 2) {
+            if (this.player.shieldActive) {
+              // Kinetic orbit shield completely collapses on asteroid impact, keeping mother ship alive!
+              this.player.shieldActive = false;
+              this.player.shieldHp = 0;
+              setShieldActiveStatus(false);
+              this.explosions.push(new AreaExplosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, 100));
+              sfx.playShieldBreak();
+              sfx.playBoom();
+              this.player.invulnerableTimer = 1600;
+              return;
+            }
             this.explosions.push(new Explosion(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, 'large'));
             sfx.playBoom();
             this.player.lives = 0; 
@@ -1134,10 +1782,7 @@ export default function App() {
               setLives(this.player.lives);
               sfx.playPowerup();
             } else if(drop.type === 'coin') {
-              setCoins(prev => {
-                const nc = prev + 5;
-                return nc;
-              });
+              updateCoins(prev => prev + 5);
               sfx.playPowerup();
             } else if (drop.type === 'energy') {
               if (this.player.specialCharges < this.player.maxEnergy * 3) {
@@ -1145,16 +1790,38 @@ export default function App() {
                 this.updateEnergyHUD();
                 sfx.playPowerup();
               }
+            } else if (drop.type === 'flame') {
+              this.player.flameTimer = 16000;
+              setActiveFlameSecs(16);
+              sfx.playPowerup();
+            } else if (drop.type === 'alien') {
+              this.alienHackTimer = 12000;
+              setActiveAlienSecs(12);
+              sfx.playAlienHack();
+            } else if (drop.type === 'shield') {
+              updateShields(prev => prev + 1);
+              sfx.playPowerup();
             } else if (drop.type === 'multiplier') {
               sfx.playPowerup();
-              let currentFleet = 1 + this.allies.length;
-              let targetFleet = currentFleet * drop.value; 
-              let newShips = targetFleet - currentFleet;
+              const MAX_ALLIES = 15;
+              const currentAllies = this.allies.length;
+              const currentFleet = 1 + currentAllies; // 1 player mother ship + allies
+              const targetFleet = currentFleet * drop.value;
+              const targetAllies = Math.min(MAX_ALLIES, targetFleet - 1);
+              const newShips = Math.max(0, targetAllies - currentAllies);
+
               for(let i = 0; i < newShips; i++) {
                 this.allies.push(new Ally(this, this.player.x, this.player.y));
               }
               this.updateAllyFormations();
-              this.addScore(50 * drop.value); 
+
+              if (currentAllies >= MAX_ALLIES) {
+                // If player fleet is already maxed at 15 escort troops, grant bonus score & coins
+                this.addScore(150 * drop.value);
+                updateCoins(prev => prev + 2 * drop.value);
+              } else {
+                this.addScore(50 * drop.value);
+              }
             }
            }
         });
@@ -1232,8 +1899,6 @@ export default function App() {
       lastTime = timestamp;
       const dt = Math.min(deltaTime, 32); 
 
-      // Read current game mode via state ref or check window / closure
-      // We can inspect current gameMode from React by storing it in a ref
       const currentMode = modeRef.current;
       game.update(dt, currentMode);
       game.draw(ctx, currentMode);
@@ -1256,7 +1921,9 @@ export default function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (modeRef.current === 'playing') {
+        if (showUpgrades) {
+          handleCloseUpgrades();
+        } else if (modeRef.current === 'playing') {
           setGameMode('paused');
         } else if (modeRef.current === 'paused') {
           setGameMode('playing');
@@ -1265,7 +1932,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [showUpgrades, upgradesReturnMode]);
 
   const initAudio = async () => {
     if (typeof Tone !== 'undefined') {
@@ -1309,6 +1976,7 @@ export default function App() {
 
   const handleMenu = () => {
     setGameMode('menu');
+    setShowUpgrades(false);
     if (gameRef.current) {
       gameRef.current.init();
     }
@@ -1320,6 +1988,68 @@ export default function App() {
     } else if (modeRef.current === 'paused') {
       setGameMode('playing');
     }
+  };
+
+  const handleOpenUpgrades = () => {
+    setUpgradesReturnMode(modeRef.current);
+    if (modeRef.current === 'playing') {
+      setGameMode('paused');
+    }
+    setShowUpgrades(true);
+  };
+
+  const handleCloseUpgrades = () => {
+    setShowUpgrades(false);
+    setRebindAction(null);
+    if (upgradesReturnMode === 'menu') {
+      setGameMode('menu');
+    } else if (upgradesReturnMode === 'gameover') {
+      setGameMode('gameover');
+    } else if (upgradesReturnMode === 'playing' || upgradesReturnMode === 'paused') {
+      setGameMode('playing');
+    }
+  };
+
+  const handleBuyShield = () => {
+    if (coins < 10) {
+      if (sfxRef.current) sfxRef.current.playBoom();
+      return;
+    }
+    updateCoins(prev => prev - 10);
+    updateShields(prev => prev + 1);
+    if (sfxRef.current) sfxRef.current.playPowerup();
+  };
+
+  const handleBuyFlamethrower = () => {
+    if (coins < 30) {
+      if (sfxRef.current) sfxRef.current.playBoom();
+      return;
+    }
+    updateCoins(prev => prev - 30);
+    if (gameRef.current?.player && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
+      gameRef.current.player.flameTimer = Math.max(0, gameRef.current.player.flameTimer) + 16000;
+      setActiveFlameSecs(Math.ceil(gameRef.current.player.flameTimer / 1000));
+    } else {
+      pendingFlameRef.current = true;
+      setActiveFlameSecs(16);
+    }
+    if (sfxRef.current) sfxRef.current.playFlame();
+  };
+
+  const handleBuyAlienHack = () => {
+    if (coins < 50) {
+      if (sfxRef.current) sfxRef.current.playBoom();
+      return;
+    }
+    updateCoins(prev => prev - 50);
+    if (gameRef.current && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
+      gameRef.current.alienHackTimer = Math.max(0, gameRef.current.alienHackTimer) + 12000;
+      setActiveAlienSecs(Math.ceil(gameRef.current.alienHackTimer / 1000));
+    } else {
+      pendingAlienRef.current = true;
+      setActiveAlienSecs(12);
+    }
+    if (sfxRef.current) sfxRef.current.playAlienHack();
   };
 
   return (
@@ -1341,6 +2071,17 @@ export default function App() {
                 <span className="hud-val font-[Orbitron]" id="coins-display">{coins}</span>
               </div>
             </div>
+            
+            {/* Upgrade Armory Button */}
+            <button 
+              id="hud-upgrade-btn"
+              className="hud-upgrade-btn"
+              onClick={handleOpenUpgrades}
+              aria-label="Open Upgrade Armory"
+            >
+              <span>⚡</span>
+              <span>UPGRADES</span>
+            </button>
           </div>
           
           <div className="hud-center">
@@ -1369,6 +2110,30 @@ export default function App() {
               ⏸
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Active Buffs Banners */}
+      {(gameMode === 'playing' || gameMode === 'paused') && (
+        <div className="buff-banner-container">
+          {activeFlameSecs > 0 && (
+            <div className="buff-pill flame">
+              <span>🔥</span>
+              <span>THERMAL PLASMA ({activeFlameSecs}s)</span>
+            </div>
+          )}
+          {activeAlienSecs > 0 && (
+            <div className="buff-pill alien">
+              <span>👽</span>
+              <span>ALIEN ASTRO HACK ({activeAlienSecs}s)</span>
+            </div>
+          )}
+          {shieldActiveStatus && (
+            <div className="buff-pill shield">
+              <span>🛡️</span>
+              <span>KINETIC ORBIT SHIELD ({shieldHpStatus}/4)</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1461,16 +2226,35 @@ export default function App() {
             </div>
           )}
           
-          {/* Action Buttons: Green SPEC directly over Red SHOOT */}
+          {/* Action Buttons: Green SPEC, Blue SHIELD (with exponent stack counter), Red SHOOT */}
           <div className="touch-actions">
-            <button 
-              id="t-special" 
-              className={`t-btn-special ${pressedButtons['x'] ? 'active' : ''}`}
-              {...bindControl('x')}
-              aria-label="Special Attack"
-            >
-              SPEC
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                id="t-shield" 
+                className={`t-btn-shield ${pressedButtons['c'] || pressedButtons['shield'] ? 'active' : ''}`}
+                {...bindControl('shield')}
+                onClick={() => {
+                  if (gameRef.current?.player) {
+                    gameRef.current.player.activateShield();
+                  }
+                }}
+                aria-label="Deploy Orbit Shield"
+              >
+                <span className="shield-count-badge">x{shieldsCount}</span>
+                <svg className="w-5 h-5 text-sky-300" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.54-3.05 8.79-7 9.88-3.95-1.09-7-5.34-7-9.88V6.3l7-3.12z"/>
+                </svg>
+                <span className="text-[8px] font-bold tracking-wider leading-none mt-0.5">SHIELD</span>
+              </button>
+              <button 
+                id="t-special" 
+                className={`t-btn-special ${pressedButtons['x'] ? 'active' : ''}`}
+                {...bindControl('x')}
+                aria-label="Special Attack"
+              >
+                SPEC
+              </button>
+            </div>
             <button 
               id="t-shoot" 
               className={`t-btn-shoot ${pressedButtons['z'] ? 'active' : ''}`}
@@ -1484,7 +2268,7 @@ export default function App() {
       )}
 
       {/* Main Menu Overlay */}
-      {gameMode === 'menu' && (
+      {gameMode === 'menu' && !showUpgrades && (
         <div id="main-menu" className="overlay relative overflow-hidden">
           <div className="absolute inset-0 pointer-events-none z-0">
             {[...Array(45)].map((_, i) => (
@@ -1509,6 +2293,7 @@ export default function App() {
           <div className="panel relative z-10">
             <div className="title-text">COSMIC<span>SHOOTER</span></div>
             <button className="btn" onClick={handlePlay}>PLAY</button>
+            <button className="btn btn-outline" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
             <button className="btn btn-outline" onClick={() => setShowControls(!showControls)}>CONTROLS</button>
             <button 
               className="btn btn-outline mt-3 text-xs tracking-wider" 
@@ -1523,17 +2308,19 @@ export default function App() {
                   <div className="flex-1">
                     <p className="font-[Orbitron] text-blue-400 mb-2 text-sm tracking-wider">KEYBOARD</p>
                     <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">WASD</span> / <span className="key-badge">Arrows</span> : Move</p>
-                    <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">Z</span> / <span className="key-badge">Space</span> : Shoot</p>
-                    <p className="text-gray-300 text-xs"><span className="key-badge">X</span> : Special</p>
+                    <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">{keyBindings.shoot.toUpperCase()}</span> / <span className="key-badge">Space</span> : Shoot</p>
+                    <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">{keyBindings.special.toUpperCase()}</span> : Special Missile</p>
+                    <p className="text-gray-300 text-xs"><span className="key-badge">{keyBindings.shield.toUpperCase()}</span> : Deploy Shield</p>
                   </div>
                   <div className="flex-1 border-t sm:border-t-0 sm:border-l border-gray-700 pt-3 sm:pt-0 sm:pl-4">
                     <p className="font-[Orbitron] text-green-400 mb-2 text-sm tracking-wider">TOUCH</p>
                     <p className="text-gray-300 text-xs mb-1.5">● <span className="text-white">D-Pad / Swipe</span> : Direct Ship</p>
                     <p className="text-gray-300 text-xs mb-1.5">● <span className="text-red-400">SHOOT</span> : Fire (Hold)</p>
-                    <p className="text-gray-300 text-xs">● <span className="text-green-400">SPEC</span> : Special (Above Shoot)</p>
+                    <p className="text-gray-300 text-xs mb-1.5">● <span className="text-green-400">SPEC</span> : Special Missile</p>
+                    <p className="text-gray-300 text-xs">● <span className="text-sky-400">SHIELD</span> : Kinetic Orbit Shield</p>
                   </div>
                 </div>
-                <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest">Switch between D-Pad buttons or Swipe gestures anytime.</p>
+                <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest">Reconfigure keyboard controls anytime in the Upgrade Armory.</p>
               </div>
             )}
           </div>
@@ -1541,9 +2328,8 @@ export default function App() {
       )}
 
       {/* Pause Menu Overlay */}
-      {gameMode === 'paused' && (
+      {gameMode === 'paused' && !showUpgrades && (
         <div id="pause-menu" className="overlay relative overflow-hidden">
-          {/* Animated Starfield Background */}
           <div className="absolute inset-0 pointer-events-none z-0">
             {[...Array(45)].map((_, i) => (
               <div
@@ -1567,7 +2353,8 @@ export default function App() {
           <div className="panel relative z-10">
             <h2 className="text-4xl font-bold text-blue-400 mb-8 font-[Orbitron] tracking-widest">PAUSED</h2>
             <button className="btn" onClick={handlePauseToggle}>RESUME</button>
-            <button className="btn btn-outline mt-4" onClick={handleRestart}>RESTART</button>
+            <button className="btn btn-outline mt-4" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
+            <button className="btn btn-outline" onClick={handleRestart}>RESTART</button>
             <button className="btn btn-outline" onClick={() => setControlMode(prev => prev === 'touch' ? 'keyboard' : 'touch')}>
               CONTROL: {controlMode.toUpperCase()}
             </button>
@@ -1577,7 +2364,7 @@ export default function App() {
       )}
 
       {/* Game Over Menu Overlay */}
-      {gameMode === 'gameover' && (
+      {gameMode === 'gameover' && !showUpgrades && (
         <div id="game-over-menu" className="overlay relative overflow-hidden">
           <div className="absolute inset-0 pointer-events-none z-0">
             {[...Array(45)].map((_, i) => (
@@ -1608,12 +2395,221 @@ export default function App() {
               <p className="text-xl text-yellow-400 font-[Orbitron]">{highScore.toString().padStart(6, '0')}</p>
             </div>
             <button className="btn" onClick={handleRestart}>RETRY</button>
+            <button className="btn btn-outline" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
             <button className="btn btn-outline" onClick={handleMenu}>MAIN MENU</button>
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade Armory Modal (Highest stacking overlay) */}
+      {showUpgrades && (
+        <div id="upgrades-modal">
+          <div className="armory-panel">
+            {/* Header with Coin Wealth & Close 'X' Button */}
+            <div className="flex items-center justify-between border-b border-blue-500/40 pb-3 mb-4">
+              <div>
+                <h2 className="text-xl font-bold font-[Orbitron] text-sky-400 tracking-wider">UPGRADE ARMORY</h2>
+                <p className="text-xs text-gray-400">Added Features & Keymapping</p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-1.5 bg-yellow-950/60 border border-yellow-500/50 px-3 py-1.5 rounded-full font-[Orbitron] text-yellow-300 font-bold text-sm shadow-[0_0_10px_rgba(245,158,11,0.3)]">
+                  <span>🪙</span>
+                  <span>{coins}</span>
+                </div>
+                <button
+                  id="armory-close-x"
+                  onClick={handleCloseUpgrades}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-600 text-gray-300 hover:text-white flex items-center justify-center font-bold text-sm transition-colors cursor-pointer"
+                  aria-label="Close upgrades menu"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Added Feature: Kinetic Orbit Shield */}
+            <div className="armory-card featured">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-400 flex items-center justify-center text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.54-3.05 8.79-7 9.88-3.95-1.09-7-5.34-7-9.88V6.3l7-3.12z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-[Orbitron] font-bold text-sky-300 text-sm tracking-wide">Orbit Kinetic Shield</span>
+                      <span className="bg-sky-500/30 text-sky-200 border border-sky-400 text-[10px] font-bold px-2 py-0.5 rounded-full font-[Orbitron]">10 🪙</span>
+                    </div>
+                    <p className="text-[11px] text-gray-300 mt-0.5 leading-snug">
+                      Generates a 4-hit orbiting kinetic mesh. Absorbs multiple lasers or collapses instantly on asteroid impact to protect the mother ship.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-sky-500/30 mt-2">
+                <div className="text-xs font-[Orbitron] text-gray-300">
+                  Stock: <span className="text-yellow-400 font-bold">x{shieldsCount}</span>
+                </div>
+                <button
+                  id="buy-shield-btn"
+                  onClick={handleBuyShield}
+                  disabled={coins < 10}
+                  className={`font-[Orbitron] text-xs font-bold px-3 py-1 rounded border transition-all cursor-pointer ${
+                    coins >= 10
+                      ? 'bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white border-sky-300 shadow-[0_0_10px_rgba(56,189,248,0.4)] active:scale-95'
+                      : 'bg-slate-800 text-gray-500 border-slate-700 cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  {coins >= 10 ? 'BUY (10 🪙)' : '10 🪙'}
+                </button>
+              </div>
+            </div>
+
+            {/* Field Power-Ups & Armory Purchases */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
+              <div className="armory-card !p-3 !mb-0 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xl">🔥</span>
+                      <span className="font-[Orbitron] text-xs font-bold text-orange-400">Flamethrower</span>
+                    </div>
+                    <span className="bg-orange-500/20 text-orange-300 border border-orange-500/40 text-[10px] font-bold px-2 py-0.5 rounded font-[Orbitron]">
+                      30 🪙
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-300 leading-snug mb-2.5">
+                    Fires massive thermal plasma balls for 16s, obliterating enemy fleets and melting bullets. Also drops in field.
+                  </p>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-slate-700/60 mt-auto">
+                  <span className="text-[10px] font-[Orbitron] text-gray-400">
+                    {activeFlameSecs > 0 ? (
+                      <span className="text-orange-300 font-bold animate-pulse">ACTIVE: {activeFlameSecs}s</span>
+                    ) : (
+                      <span>Duration: 16s</span>
+                    )}
+                  </span>
+                  <button
+                    id="buy-flame-btn"
+                    onClick={handleBuyFlamethrower}
+                    disabled={coins < 30}
+                    className={`font-[Orbitron] text-xs font-bold px-3 py-1 rounded border transition-all cursor-pointer ${
+                      coins >= 30 
+                        ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white border-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.4)] active:scale-95' 
+                        : 'bg-slate-800 text-gray-500 border-slate-700 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    {coins >= 30 ? 'BUY (30 🪙)' : '30 🪙'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="armory-card !p-3 !mb-0 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xl">👽</span>
+                      <span className="font-[Orbitron] text-xs font-bold text-purple-400">Alien Astro Hack</span>
+                    </div>
+                    <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold px-2 py-0.5 rounded font-[Orbitron]">
+                      50 🪙
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-300 leading-snug mb-2.5">
+                    Hacks alien fleet telemetry for 12s, forcing them to bank 90° and turn weapons against each other in friendly fire!
+                  </p>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-slate-700/60 mt-auto">
+                  <span className="text-[10px] font-[Orbitron] text-gray-400">
+                    {activeAlienSecs > 0 ? (
+                      <span className="text-purple-300 font-bold animate-pulse">ACTIVE: {activeAlienSecs}s</span>
+                    ) : (
+                      <span>Duration: 12s</span>
+                    )}
+                  </span>
+                  <button
+                    id="buy-alien-btn"
+                    onClick={handleBuyAlienHack}
+                    disabled={coins < 50}
+                    className={`font-[Orbitron] text-xs font-bold px-3 py-1 rounded border transition-all cursor-pointer ${
+                      coins >= 50 
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.4)] active:scale-95' 
+                        : 'bg-slate-800 text-gray-500 border-slate-700 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    {coins >= 50 ? 'BUY (50 🪙)' : '50 🪙'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Key Bindings Configurator */}
+            <div className="bg-slate-900/90 border border-slate-700 rounded-lg p-3 mb-4">
+              <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-700">
+                <span className="font-[Orbitron] text-xs font-bold text-blue-400 tracking-wider">KEYBOARD CONFIGURATION</span>
+                <button 
+                  onClick={() => saveKeyBindings(DEFAULT_KEY_BINDINGS)}
+                  className="text-[10px] font-[Orbitron] text-gray-400 hover:text-white underline cursor-pointer"
+                >
+                  Reset Defaults
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-300">Shoot Laser:</span>
+                  <button 
+                    className={`key-record-btn ${rebindAction === 'shoot' ? 'recording' : ''}`}
+                    onClick={() => setRebindAction(rebindAction === 'shoot' ? null : 'shoot')}
+                  >
+                    {rebindAction === 'shoot' ? 'PRESS KEY' : keyBindings.shoot.toUpperCase()}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-300">Special Missile:</span>
+                  <button 
+                    className={`key-record-btn ${rebindAction === 'special' ? 'recording' : ''}`}
+                    onClick={() => setRebindAction(rebindAction === 'special' ? null : 'special')}
+                  >
+                    {rebindAction === 'special' ? 'PRESS KEY' : keyBindings.special.toUpperCase()}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-300">Deploy Orbit Shield:</span>
+                  <button 
+                    className={`key-record-btn ${rebindAction === 'shield' ? 'recording' : ''}`}
+                    onClick={() => setRebindAction(rebindAction === 'shield' ? null : 'shield')}
+                  >
+                    {rebindAction === 'shield' ? 'PRESS KEY' : keyBindings.shield.toUpperCase()}
+                  </button>
+                </div>
+              </div>
+
+              {rebindAction && (
+                <p className="text-[10px] text-yellow-300 text-center mt-2 animate-pulse">
+                  Press any keyboard key to rebind {rebindAction.toUpperCase()} (or Escape to cancel). Saved to browser storage.
+                </p>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex justify-end gap-2">
+              <button 
+                id="close-upgrades-btn"
+                onClick={handleCloseUpgrades}
+                className="btn !py-2.5 !px-6 !text-sm !w-full"
+              >
+                {upgradesReturnMode === 'menu' ? '← RETURN TO MAIN MENU' : upgradesReturnMode === 'gameover' ? '← RETURN TO RESULTS' : '← RETURN TO GAME'}
+              </button>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
-
-
