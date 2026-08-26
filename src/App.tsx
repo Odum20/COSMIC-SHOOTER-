@@ -21,7 +21,7 @@ export default function App() {
   const [energyBars, setEnergyBars] = useState(1);
   const [showControls, setShowControls] = useState(false);
   const [controlMode, setControlMode] = useState<'touch' | 'keyboard'>('touch');
-  const [navMode, setNavMode] = useState<'dpad' | 'swipe'>('dpad');
+  const [navMode, setNavMode] = useState<'dpad' | 'swipe'>('swipe');
   const [showSwipeHint, setShowSwipeHint] = useState(false);
   const [swipeTouchPos, setSwipeTouchPos] = useState<{ x: number; y: number } | null>(null);
   const [pressedButtons, setPressedButtons] = useState<{ [key: string]: boolean }>({});
