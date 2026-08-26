@@ -483,6 +483,12 @@ export default function App() {
           this.shootTimer = 800 + Math.random() * 400;
         }
       }
+      hit() {
+        if (this.markedForDeletion) return;
+        this.markedForDeletion = true;
+        this.game.explosions.push(new Explosion(this.x + this.width/2, this.y + this.height/2, 'small'));
+        sfx.playBoom();
+      }
       draw(ctx: CanvasRenderingContext2D) {
         ctx.save();
         ctx.translate(this.x, this.y);
@@ -1022,12 +1028,17 @@ export default function App() {
 
         this.checkCollisions();
 
+        const prevAllyCount = this.allies.length;
         this.projectiles = this.projectiles.filter(p => !p.markedForDeletion);
         this.enemies = this.enemies.filter(e => !e.markedForDeletion);
         this.explosions = this.explosions.filter(e => !e.markedForDeletion);
         this.drops = this.drops.filter(d => !d.markedForDeletion);
         this.allies = this.allies.filter(a => !a.markedForDeletion);
         this.asteroids = this.asteroids.filter(a => !a.markedForDeletion);
+
+        if (this.allies.length !== prevAllyCount) {
+          this.updateAllyFormations();
+        }
       }
 
       checkCollisions() {
@@ -1054,19 +1065,38 @@ export default function App() {
               }
             });
           } else if (proj.type === 'enemy') {
-             if (rectIntersect(proj.x - proj.width/2, proj.y, proj.width, proj.height, this.player.x, this.player.y, this.player.width, this.player.height)) {
+            if (rectIntersect(proj.x - proj.width/2, proj.y, proj.width, proj.height, this.player.x, this.player.y, this.player.width, this.player.height)) {
               proj.markedForDeletion = true;
               this.player.hit();
+            } else {
+              for (let ally of this.allies) {
+                if (!ally.markedForDeletion && rectIntersect(proj.x - proj.width/2, proj.y, proj.width, proj.height, ally.x, ally.y, ally.width, ally.height)) {
+                  proj.markedForDeletion = true;
+                  ally.hit();
+                  break;
+                }
+              }
             }
           }
         });
 
         this.enemies.forEach(enemy => {
+          if (enemy.markedForDeletion) return;
+
           if (rectIntersect(enemy.x+5, enemy.y+5, enemy.width-10, enemy.height-10, this.player.x+10, this.player.y+10, this.player.width-20, this.player.height-20)) {
             enemy.markedForDeletion = true;
             this.explosions.push(new Explosion(enemy.x + enemy.width/2, enemy.y + enemy.height/2, 'medium'));
             sfx.playBoom();
             this.player.hit();
+            return;
+          }
+
+          for (let ally of this.allies) {
+            if (!ally.markedForDeletion && rectIntersect(enemy.x, enemy.y, enemy.width, enemy.height, ally.x, ally.y, ally.width, ally.height)) {
+              ally.hit();
+              enemy.hit();
+              break;
+            }
           }
         });
 
@@ -1081,6 +1111,18 @@ export default function App() {
             this.player.lives = 0; 
             setLives(0);
             this.gameOver();
+            return;
+          }
+
+          for (let ally of this.allies) {
+            if (!ally.markedForDeletion) {
+              let adx = asteroid.x - (ally.x + ally.width / 2);
+              let ady = asteroid.y - (ally.y + ally.height / 2);
+              let adist = Math.sqrt(adx * adx + ady * ady);
+              if (adist < asteroid.radius + Math.max(ally.width, ally.height) / 2) {
+                ally.hit();
+              }
+            }
           }
         });
 
