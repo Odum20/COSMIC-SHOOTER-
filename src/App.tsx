@@ -21,10 +21,80 @@ export default function App() {
   const [energyBars, setEnergyBars] = useState(1);
   const [showControls, setShowControls] = useState(false);
   const [controlMode, setControlMode] = useState<'touch' | 'keyboard'>('touch');
+  const [navMode, setNavMode] = useState<'dpad' | 'swipe'>('dpad');
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [swipeTouchPos, setSwipeTouchPos] = useState<{ x: number; y: number } | null>(null);
   const [pressedButtons, setPressedButtons] = useState<{ [key: string]: boolean }>({});
 
   const gameRef = useRef<any>(null);
   const sfxRef = useRef<any>(null);
+  const swipeAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const hasShownHintRef = useRef(false);
+
+  const triggerSwipeTutorial = () => {
+    setShowSwipeHint(true);
+    setTimeout(() => {
+      setShowSwipeHint(false);
+    }, 2800);
+  };
+
+  const handleSwipePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
+    setShowSwipeHint(false);
+    swipeAnchorRef.current = { x: e.clientX, y: e.clientY };
+    setSwipeTouchPos({ x: e.clientX, y: e.clientY });
+    if (gameRef.current?.input) {
+      gameRef.current.input.setMoveVector(0, 0);
+    }
+  };
+
+  const handleSwipePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!swipeAnchorRef.current) return;
+    const dx = e.clientX - swipeAnchorRef.current.x;
+    const dy = e.clientY - swipeAnchorRef.current.y;
+    const maxDist = 38;
+    const clampedX = Math.max(-1, Math.min(1, dx / maxDist));
+    const clampedY = Math.max(-1, Math.min(1, dy / maxDist));
+
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > maxDist) {
+      swipeAnchorRef.current.x = e.clientX - (clampedX * maxDist);
+      swipeAnchorRef.current.y = e.clientY - (clampedY * maxDist);
+    }
+
+    setSwipeTouchPos({ x: e.clientX, y: e.clientY });
+    if (gameRef.current?.input) {
+      gameRef.current.input.setMoveVector(clampedX, clampedY);
+    }
+  };
+
+  const handleSwipePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch (_) {}
+    swipeAnchorRef.current = null;
+    setSwipeTouchPos(null);
+    if (gameRef.current?.input) {
+      gameRef.current.input.setMoveVector(0, 0);
+    }
+  };
+
+  const toggleNavMode = () => {
+    setNavMode(prev => {
+      const next = prev === 'dpad' ? 'swipe' : 'dpad';
+      if (next === 'swipe') {
+        triggerSwipeTutorial();
+      }
+      return next;
+    });
+    if (gameRef.current?.input) {
+      gameRef.current.input.setMoveVector(0, 0);
+    }
+  };
 
   const bindControl = (key: string) => ({
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -163,6 +233,7 @@ export default function App() {
 
     class InputHandler {
       keys: { [key: string]: boolean } = {};
+      moveVector: { x: number; y: number } = { x: 0, y: 0 };
       keydownHandler: (e: KeyboardEvent) => void;
       keyupHandler: (e: KeyboardEvent) => void;
 
@@ -192,12 +263,17 @@ export default function App() {
         }
       }
 
+      setMoveVector(x: number, y: number) {
+        this.moveVector = { x, y };
+      }
+
       isPressed(key: string) { return !!this.keys[key.toLowerCase()]; }
       isAnyMovement() {
         return this.isPressed('w') || this.isPressed('a') || 
                this.isPressed('s') || this.isPressed('d') || 
                this.isPressed('arrowup') || this.isPressed('arrowdown') || 
-               this.isPressed('arrowleft') || this.isPressed('arrowright'); 
+               this.isPressed('arrowleft') || this.isPressed('arrowright') ||
+               Math.abs(this.moveVector.x) > 0.05 || Math.abs(this.moveVector.y) > 0.05;
       }
 
       destroy() {
@@ -272,7 +348,10 @@ export default function App() {
         if (this.game.input.isPressed('arrowup') || this.game.input.isPressed('w')) vy = -this.speed;
         if (this.game.input.isPressed('arrowdown') || this.game.input.isPressed('s')) vy = this.speed;
         
-        if (vx !== 0 && vy !== 0) {
+        if (Math.abs(this.game.input.moveVector.x) > 0.05 || Math.abs(this.game.input.moveVector.y) > 0.05) {
+          vx = this.game.input.moveVector.x * this.speed;
+          vy = this.game.input.moveVector.y * this.speed;
+        } else if (vx !== 0 && vy !== 0) {
           const norm = Math.sqrt(vx*vx + vy*vy);
           vx = (vx / norm) * this.speed;
           vy = (vy / norm) * this.speed;
@@ -1153,6 +1232,10 @@ export default function App() {
   const handlePlay = async () => {
     await initAudio();
     setGameMode('playing');
+    if (navMode === 'swipe' && !hasShownHintRef.current) {
+      hasShownHintRef.current = true;
+      triggerSwipeTutorial();
+    }
     if (gameRef.current) {
       gameRef.current.init();
     }
@@ -1161,6 +1244,10 @@ export default function App() {
   const handleRestart = async () => {
     await initAudio();
     setGameMode('playing');
+    if (navMode === 'swipe' && !hasShownHintRef.current) {
+      hasShownHintRef.current = true;
+      triggerSwipeTutorial();
+    }
     if (gameRef.current) {
       gameRef.current.init();
     }
@@ -1234,46 +1321,93 @@ export default function App() {
       {/* Mobile Controls */}
       {gameMode === 'playing' && controlMode === 'touch' && (
         <div id="mobile-controls">
-          <div className="touch-joystick">
-            <div></div>
-            <button 
-              id="t-up" 
-              className={`t-btn ${pressedButtons['arrowup'] ? 'active' : ''}`}
-              {...bindControl('arrowup')}
-              aria-label="Move Up"
+          {/* Swipe Surface */}
+          {navMode === 'swipe' && (
+            <div 
+              className="swipe-surface"
+              onPointerDown={handleSwipePointerDown}
+              onPointerMove={handleSwipePointerMove}
+              onPointerUp={handleSwipePointerUp}
+              onPointerCancel={handleSwipePointerUp}
+            />
+          )}
+
+          {/* Swipe Thumb Indicator */}
+          {navMode === 'swipe' && swipeTouchPos && (
+            <div 
+              className="swipe-indicator"
+              style={{ left: `${swipeTouchPos.x}px`, top: `${swipeTouchPos.y}px` }}
             >
-              ▲
-            </button>
-            <div></div>
-            <button 
-              id="t-left" 
-              className={`t-btn ${pressedButtons['arrowleft'] ? 'active' : ''}`}
-              {...bindControl('arrowleft')}
-              aria-label="Move Left"
-            >
-              ◀
-            </button>
-            <div className="t-btn-center">●</div>
-            <button 
-              id="t-right" 
-              className={`t-btn ${pressedButtons['arrowright'] ? 'active' : ''}`}
-              {...bindControl('arrowright')}
-              aria-label="Move Right"
-            >
-              ▶
-            </button>
-            <div></div>
-            <button 
-              id="t-down" 
-              className={`t-btn ${pressedButtons['arrowdown'] ? 'active' : ''}`}
-              {...bindControl('arrowdown')}
-              aria-label="Move Down"
-            >
-              ▼
-            </button>
-            <div></div>
-          </div>
+              <div className="swipe-indicator-dot" />
+            </div>
+          )}
+
+          {/* Animated Swipe Onboarding Hint */}
+          {showSwipeHint && (
+            <div className="swipe-tutorial-hint">
+              <div className="swipe-hand-anim">👆</div>
+              <div className="swipe-hint-badge">
+                <div>Swipe to direct ship!</div>
+                <div className="swipe-hint-sub">Drag thumb anywhere on screen</div>
+              </div>
+            </div>
+          )}
+
+          {/* Nav Mode Switcher Button */}
+          <button 
+            id="nav-mode-toggle"
+            className="touch-nav-toggle"
+            onClick={toggleNavMode}
+            aria-label="Toggle Navigation Mode"
+          >
+            <span className="toggle-icon">{navMode === 'dpad' ? '🎮' : '👆'}</span>
+            <span>{navMode === 'dpad' ? 'D-PAD' : 'SWIPE'}</span>
+          </button>
+
+          {/* D-Pad Buttons (Visible in D-Pad mode) */}
+          {navMode === 'dpad' && (
+            <div className="touch-joystick">
+              <div></div>
+              <button 
+                id="t-up" 
+                className={`t-btn ${pressedButtons['arrowup'] ? 'active' : ''}`}
+                {...bindControl('arrowup')}
+                aria-label="Move Up"
+              >
+                ▲
+              </button>
+              <div></div>
+              <button 
+                id="t-left" 
+                className={`t-btn ${pressedButtons['arrowleft'] ? 'active' : ''}`}
+                {...bindControl('arrowleft')}
+                aria-label="Move Left"
+              >
+                ◀
+              </button>
+              <div className="t-btn-center">●</div>
+              <button 
+                id="t-right" 
+                className={`t-btn ${pressedButtons['arrowright'] ? 'active' : ''}`}
+                {...bindControl('arrowright')}
+                aria-label="Move Right"
+              >
+                ▶
+              </button>
+              <div></div>
+              <button 
+                id="t-down" 
+                className={`t-btn ${pressedButtons['arrowdown'] ? 'active' : ''}`}
+                {...bindControl('arrowdown')}
+                aria-label="Move Down"
+              >
+                ▼
+              </button>
+              <div></div>
+            </div>
+          )}
           
+          {/* Action Buttons: Green SPEC directly over Red SHOOT */}
           <div className="touch-actions">
             <button 
               id="t-special" 
@@ -1340,12 +1474,12 @@ export default function App() {
                   </div>
                   <div className="flex-1 border-t sm:border-t-0 sm:border-l border-gray-700 pt-3 sm:pt-0 sm:pl-4">
                     <p className="font-[Orbitron] text-green-400 mb-2 text-sm tracking-wider">TOUCH</p>
-                    <p className="text-gray-300 text-xs mb-1.5">● <span className="text-white">D-Pad</span> : Move</p>
+                    <p className="text-gray-300 text-xs mb-1.5">● <span className="text-white">D-Pad / Swipe</span> : Direct Ship</p>
                     <p className="text-gray-300 text-xs mb-1.5">● <span className="text-red-400">SHOOT</span> : Fire (Hold)</p>
-                    <p className="text-gray-300 text-xs">● <span className="text-green-400">SPEC</span> : Special</p>
+                    <p className="text-gray-300 text-xs">● <span className="text-green-400">SPEC</span> : Special (Above Shoot)</p>
                   </div>
                 </div>
-                <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest">Controls adapt to portrait/landscape seamlessly.</p>
+                <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest">Switch between D-Pad buttons or Swipe gestures anytime.</p>
               </div>
             )}
           </div>

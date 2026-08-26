@@ -313,7 +313,7 @@ canvas {
 
 .touch-joystick {
     position: absolute;
-    bottom: 125px;
+    bottom: 74px;
     left: 20px;
     display: grid;
     grid-template-columns: repeat(3, 44px);
@@ -321,18 +321,171 @@ canvas {
     gap: 4px;
     pointer-events: auto;
     touch-action: none;
+    z-index: 40;
+}
+
+.touch-nav-toggle {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(10, 18, 38, 0.85);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    padding: 4px 10px;
+    border-radius: 9999px;
+    color: #93c5fd;
+    font-size: 0.72rem;
+    font-family: 'Orbitron', sans-serif;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    pointer-events: auto;
+    touch-action: manipulation;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    transition: all 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    z-index: 45;
+}
+
+.touch-nav-toggle:hover {
+    border-color: #60a5fa;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+}
+
+.touch-nav-toggle:active {
+    transform: scale(0.95);
+    background: rgba(59, 130, 246, 0.3);
+}
+
+.touch-nav-toggle .toggle-icon {
+    font-size: 0.85rem;
 }
 
 .touch-actions {
     position: absolute;
-    bottom: 24px;
+    bottom: 22px;
     right: 20px;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     pointer-events: auto;
     touch-action: none;
+    z-index: 40;
+}
+
+/* Swipe Surface & Touch Visualizer */
+.swipe-surface {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    touch-action: none;
+    z-index: 30;
+}
+
+.swipe-indicator {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: 2px solid rgba(56, 189, 248, 0.7);
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.25) 0%, rgba(56, 189, 248, 0) 70%);
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.6);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 35;
+    animation: pulseRing 1s ease-out infinite;
+}
+
+.swipe-indicator-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 0 8px #38bdf8;
+    transform: translate(-50%, -50%);
+}
+
+@keyframes pulseRing {
+    0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.8; }
+    50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.8; }
+}
+
+/* Swipe Tutorial Onboarding Hint */
+.swipe-tutorial-hint {
+    position: absolute;
+    top: 52%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    z-index: 60;
+    animation: hintFadeIn 0.3s ease-out forwards;
+}
+
+.swipe-hand-anim {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.9));
+    animation: swipeHandGesture 2.2s ease-in-out infinite;
+}
+
+.swipe-hint-badge {
+    margin-top: 14px;
+    background: rgba(10, 18, 38, 0.85);
+    border: 1px solid rgba(56, 189, 248, 0.6);
+    padding: 6px 14px;
+    border-radius: 9999px;
+    color: #e0f2fe;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 12px rgba(56, 189, 248, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    text-align: center;
+    animation: hintBadgePulse 2s ease-in-out infinite;
+}
+
+.swipe-hint-sub {
+    margin-top: 4px;
+    font-size: 0.65rem;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+}
+
+@keyframes hintFadeIn {
+    from { opacity: 0; transform: translate(-50%, -45%) scale(0.9); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes swipeHandGesture {
+    0% { transform: translate(-30px, 20px) rotate(-10deg); opacity: 0; }
+    20% { opacity: 1; }
+    50% { transform: translate(30px, -20px) rotate(10deg); opacity: 1; }
+    80% { transform: translate(0px, 0px) rotate(0deg); opacity: 0.8; }
+    100% { transform: translate(-30px, 20px) rotate(-10deg); opacity: 0; }
+}
+
+@keyframes hintBadgePulse {
+    0%, 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 8px rgba(56, 189, 248, 0.3); }
+    50% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 18px rgba(56, 189, 248, 0.7); }
 }
 
 .t-btn {
@@ -488,53 +641,63 @@ canvas {
         font-size: 0.75rem; 
     }
     .touch-joystick {
-        bottom: clamp(100px, 16vh, 135px);
+        bottom: clamp(62px, 10vh, 78px);
         left: clamp(12px, 3.5vw, 20px);
         grid-template-columns: repeat(3, clamp(38px, 9.5vw, 44px));
         grid-template-rows: repeat(3, clamp(38px, 9.5vw, 44px));
         gap: 3px;
     }
+    .touch-nav-toggle {
+        bottom: clamp(14px, 2.5vh, 20px);
+        left: clamp(12px, 3.5vw, 20px);
+        font-size: 0.68rem;
+        padding: 3px 8px;
+    }
     .touch-actions {
-        bottom: clamp(14px, 3vh, 24px);
+        bottom: clamp(14px, 2.5vh, 22px);
         right: clamp(12px, 3.5vw, 20px);
-        gap: clamp(10px, 2.5vw, 16px);
+        flex-direction: column;
+        align-items: center;
+        gap: clamp(8px, 1.8vh, 12px);
     }
     .t-btn-special {
-        width: clamp(62px, 15vw, 72px);
-        height: clamp(62px, 15vw, 72px);
-        font-size: 0.85rem;
+        width: clamp(58px, 14vw, 68px);
+        height: clamp(58px, 14vw, 68px);
+        font-size: 0.82rem;
     }
     .t-btn-shoot {
-        width: clamp(68px, 17vw, 78px);
-        height: clamp(68px, 17vw, 78px);
+        width: clamp(68px, 16vw, 78px);
+        height: clamp(68px, 16vw, 78px);
         font-size: 0.95rem;
     }
 }
 
 @media (pointer: coarse) and (orientation: landscape) {
     .touch-joystick {
-        bottom: 20px;
-        left: 30px;
-        grid-template-columns: repeat(3, 48px);
-        grid-template-rows: repeat(3, 48px);
-        gap: 4px;
+        bottom: 58px;
+        left: 24px;
+        grid-template-columns: repeat(3, 42px);
+        grid-template-rows: repeat(3, 42px);
+        gap: 3px;
+    }
+    .touch-nav-toggle {
+        bottom: 16px;
+        left: 24px;
     }
     .touch-actions {
-        bottom: 20px;
-        right: 30px;
-        flex-direction: row;
+        bottom: 16px;
+        right: 24px;
+        flex-direction: column;
         align-items: center;
-        gap: 16px;
+        gap: 10px;
     }
     .t-btn-special {
-        width: 68px;
-        height: 68px;
-        margin-right: 0;
-        margin-bottom: 0;
+        width: 62px;
+        height: 62px;
     }
     .t-btn-shoot {
-        width: 76px;
-        height: 76px;
+        width: 72px;
+        height: 72px;
     }
     #hud { padding: 0.5rem 2rem; }
 }
