@@ -1544,16 +1544,16 @@ export default function App() {
         setShieldActiveStatus(false);
         
         if (pendingFlameRef.current) {
-          this.player.flameTimer = 16000;
-          setActiveFlameSecs(16);
+          this.player.flameTimer = 8000;
+          setActiveFlameSecs(8);
           pendingFlameRef.current = false;
         } else {
           setActiveFlameSecs(0);
         }
 
         if (pendingAlienRef.current) {
-          this.alienHackTimer = 12000;
-          setActiveAlienSecs(12);
+          this.alienHackTimer = 5000;
+          setActiveAlienSecs(5);
           pendingAlienRef.current = false;
         } else {
           setActiveAlienSecs(0);
@@ -1793,12 +1793,12 @@ export default function App() {
                 sfx.playPowerup();
               }
             } else if (drop.type === 'flame') {
-              this.player.flameTimer = 16000;
-              setActiveFlameSecs(16);
+              this.player.flameTimer = 8000;
+              setActiveFlameSecs(8);
               sfx.playPowerup();
             } else if (drop.type === 'alien') {
-              this.alienHackTimer = 12000;
-              setActiveAlienSecs(12);
+              this.alienHackTimer = 5000;
+              setActiveAlienSecs(5);
               sfx.playAlienHack();
             } else if (drop.type === 'multiplier') {
               sfx.playPowerup();
@@ -2027,11 +2027,11 @@ export default function App() {
     updateCoins(prev => prev - 30);
     setPurchasedFlame(true);
     if (gameRef.current?.player && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
-      gameRef.current.player.flameTimer = Math.max(0, gameRef.current.player.flameTimer) + 16000;
+      gameRef.current.player.flameTimer = Math.max(0, gameRef.current.player.flameTimer) + 8000;
       setActiveFlameSecs(Math.ceil(gameRef.current.player.flameTimer / 1000));
     } else {
       pendingFlameRef.current = true;
-      setActiveFlameSecs(16);
+      setActiveFlameSecs(8);
     }
     if (sfxRef.current) sfxRef.current.playFlame();
   };
@@ -2044,11 +2044,11 @@ export default function App() {
     updateCoins(prev => prev - 50);
     setPurchasedAlien(true);
     if (gameRef.current && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
-      gameRef.current.alienHackTimer = Math.max(0, gameRef.current.alienHackTimer) + 12000;
+      gameRef.current.alienHackTimer = Math.max(0, gameRef.current.alienHackTimer) + 5000;
       setActiveAlienSecs(Math.ceil(gameRef.current.alienHackTimer / 1000));
     } else {
       pendingAlienRef.current = true;
-      setActiveAlienSecs(12);
+      setActiveAlienSecs(5);
     }
     if (sfxRef.current) sfxRef.current.playAlienHack();
   };
@@ -2073,10 +2073,10 @@ export default function App() {
               </div>
             </div>
             
-            {/* Upgrade Armory Button */}
+            {/* Upgrade Armory Button - Visible on screens >= 1080px */}
             <button 
               id="hud-upgrade-btn"
-              className="hud-upgrade-btn"
+              className="hud-upgrade-btn hidden min-[1080px]:inline-flex"
               onClick={handleOpenUpgrades}
               aria-label="Open Upgrade Armory"
             >
@@ -2086,13 +2086,22 @@ export default function App() {
           </div>
           
           <div className="hud-center">
-            <div className="score-label">SCORE</div>
-            <div className="score-value font-[Orbitron]" id="score-display">
-              {score.toString().padStart(6, '0')}
-            </div>
+            <button 
+              id="pause-btn" 
+              onClick={handlePauseToggle}
+              aria-label="Pause Game"
+            >
+              ⏸
+            </button>
           </div>
 
           <div className="hud-right">
+            <div className="hud-score-box">
+              <div className="score-label">SCORE</div>
+              <div className="score-value font-[Orbitron]" id="score-display">
+                {score.toString().padStart(6, '0')}
+              </div>
+            </div>
             <div className="hud-pill energy-pill">
               <span className="hud-icon text-green-400 text-xs">⚡</span>
               <div className="energy-bar-container" id="energy-bar">
@@ -2103,13 +2112,6 @@ export default function App() {
                 <div className={`energy-segment ${energyBars >= 5 ? 'filled' : ''}`}></div>
               </div>
             </div>
-            <button 
-              id="pause-btn" 
-              onClick={handlePauseToggle}
-              aria-label="Pause Game"
-            >
-              ⏸
-            </button>
           </div>
         </div>
       )}
@@ -2118,21 +2120,21 @@ export default function App() {
       {(gameMode === 'playing' || gameMode === 'paused') && (
         <div className="buff-banner-container">
           {activeFlameSecs > 0 && (
-            <div className="buff-pill flame">
-              <span>🔥</span>
-              <span>THERMAL PLASMA ({activeFlameSecs}s)</span>
+            <div className="buff-pill flame" title={`Flamethrower (${activeFlameSecs}s)`}>
+              <span className="text-sm">🔥</span>
+              <span>{activeFlameSecs}s</span>
             </div>
           )}
           {activeAlienSecs > 0 && (
-            <div className="buff-pill alien">
-              <span>👽</span>
-              <span>ALIEN ASTRO HACK ({activeAlienSecs}s)</span>
+            <div className="buff-pill alien" title={`Alien Astro Hack (${activeAlienSecs}s)`}>
+              <span className="text-sm">👽</span>
+              <span>{activeAlienSecs}s</span>
             </div>
           )}
           {shieldActiveStatus && (
-            <div className="buff-pill shield">
-              <span>🛡️</span>
-              <span>KINETIC ORBIT SHIELD ({shieldHpStatus}/4)</span>
+            <div className="buff-pill shield" title={`Kinetic Shield (${shieldHpStatus}/4)`}>
+              <span className="text-sm">🛡️</span>
+              <span>{shieldHpStatus}/4</span>
             </div>
           )}
         </div>
@@ -2431,22 +2433,22 @@ export default function App() {
             {/* Added Feature: Kinetic Orbit Shield */}
             <div className="armory-card featured">
               <div className="flex items-start justify-between gap-3 mb-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-400 flex items-center justify-center text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+                <div className="flex items-start gap-2.5">
+                  <div className="w-10 h-10 rounded-full bg-sky-500/20 border border-sky-400 flex items-center justify-center text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.4)] shrink-0 mt-0.5">
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.54-3.05 8.79-7 9.88-3.95-1.09-7-5.34-7-9.88V6.3l7-3.12z"/>
                     </svg>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-[Orbitron] font-bold text-sky-300 text-sm tracking-wide">Orbit Kinetic Shield</span>
-                      <span className="bg-sky-500/30 text-sky-200 border border-sky-400 text-[10px] font-bold px-2 py-0.5 rounded-full font-[Orbitron]">10 🪙</span>
-                    </div>
+                    <span className="font-[Orbitron] font-bold text-sky-300 text-sm tracking-wide block">Orbit Kinetic Shield</span>
                     <p className="text-[11px] text-gray-300 mt-0.5 leading-snug">
                       Generates a 4-hit orbiting kinetic mesh. Absorbs multiple lasers or collapses instantly on asteroid impact to protect the mother ship.
                     </p>
                   </div>
                 </div>
+                <span className="bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[10px] font-bold px-2 py-0.5 rounded font-[Orbitron] shrink-0">
+                  10 🪙
+                </span>
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-sky-500/30 mt-2">
@@ -2482,7 +2484,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-300 leading-snug mb-2.5">
-                    Fires massive thermal plasma balls for 16s, obliterating enemy fleets and melting bullets. Also drops in field.
+                    Fires massive thermal plasma balls for 8s, obliterating enemy fleets and melting bullets. Also drops in field once unlocked.
                   </p>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-700/60 mt-auto">
@@ -2490,7 +2492,7 @@ export default function App() {
                     {activeFlameSecs > 0 ? (
                       <span className="text-orange-300 font-bold animate-pulse">ACTIVE: {activeFlameSecs}s</span>
                     ) : (
-                      <span>Duration: 16s</span>
+                      <span>Duration: 8s</span>
                     )}
                   </span>
                   <button
@@ -2520,7 +2522,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-300 leading-snug mb-2.5">
-                    Hacks alien fleet telemetry for 12s, forcing them to bank 90° and turn weapons against each other in friendly fire!
+                    Hacks alien fleet telemetry for 5s, forcing them to bank 90° and turn weapons against each other in friendly fire!
                   </p>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-700/60 mt-auto">
@@ -2528,7 +2530,7 @@ export default function App() {
                     {activeAlienSecs > 0 ? (
                       <span className="text-purple-300 font-bold animate-pulse">ACTIVE: {activeAlienSecs}s</span>
                     ) : (
-                      <span>Duration: 12s</span>
+                      <span>Duration: 5s</span>
                     )}
                   </span>
                   <button

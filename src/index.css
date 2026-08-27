@@ -151,11 +151,11 @@ canvas {
     top: 0;
     left: 0;
     width: 100%;
-    padding: 0.6rem 0.75rem;
+    padding: 0.55rem 0.75rem;
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     pointer-events: none;
     z-index: 50;
     box-sizing: border-box;
@@ -165,22 +165,29 @@ canvas {
     display: flex;
     align-items: center;
     justify-content: flex-start;
+    gap: 0.5rem;
 }
 
 .hud-center {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    text-align: center;
-    min-width: 0;
+    pointer-events: none;
 }
 
 .hud-right {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.45rem;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.25rem;
+}
+
+.hud-score-box {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1;
 }
 
 .hud-pill {
@@ -271,20 +278,20 @@ canvas {
 
 #pause-btn {
     pointer-events: auto;
-    background: rgba(10, 18, 38, 0.85);
-    border: 1px solid rgba(59, 130, 246, 0.5);
+    background: rgba(10, 18, 38, 0.88);
+    border: 1px solid rgba(59, 130, 246, 0.55);
     color: #93c5fd;
     border-radius: 50%;
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
-    font-size: 0.85rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    transition: all 0.1s ease;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 10px rgba(59, 130, 246, 0.25);
+    transition: all 0.12s ease;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
 }
@@ -292,7 +299,8 @@ canvas {
 #pause-btn:hover {
     border-color: #60a5fa;
     color: #ffffff;
-    box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+    transform: scale(1.05);
 }
 
 #pause-btn:active {
@@ -313,7 +321,7 @@ canvas {
 
 .touch-joystick {
     position: absolute;
-    bottom: 74px;
+    bottom: calc(max(68px, calc(env(safe-area-inset-bottom, 0px) + 68px)) + 52px);
     left: 20px;
     display: grid;
     grid-template-columns: repeat(3, 44px);
@@ -326,7 +334,7 @@ canvas {
 
 .touch-nav-toggle {
     position: absolute;
-    bottom: 20px;
+    bottom: max(68px, calc(env(safe-area-inset-bottom, 0px) + 68px));
     left: 20px;
     display: flex;
     align-items: center;
@@ -368,7 +376,7 @@ canvas {
 
 .touch-actions {
     position: absolute;
-    bottom: 22px;
+    bottom: max(68px, calc(env(safe-area-inset-bottom, 0px) + 68px));
     right: 20px;
     display: flex;
     flex-direction: column;
@@ -693,27 +701,30 @@ canvas {
 /* Active Power-up Banners */
 .buff-banner-container {
     position: absolute;
-    top: 54px;
+    top: 52px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 6px;
     pointer-events: none;
     z-index: 55;
+    max-width: 90%;
 }
 
 .buff-pill {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
+    gap: 4px;
+    padding: 2px 8px;
     border-radius: 9999px;
     font-family: 'Orbitron', sans-serif;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 800;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.5px;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
@@ -866,26 +877,26 @@ canvas {
         height: 8px;
     }
     #pause-btn { 
-        width: 30px; 
-        height: 30px; 
-        min-width: 30px;
-        font-size: 0.75rem; 
+        width: 34px; 
+        height: 34px; 
+        min-width: 34px;
+        font-size: 0.85rem; 
     }
     .touch-joystick {
-        bottom: clamp(62px, 10vh, 78px);
+        bottom: calc(max(68px, calc(env(safe-area-inset-bottom, 0px) + 68px)) + 46px);
         left: clamp(12px, 3.5vw, 20px);
         grid-template-columns: repeat(3, clamp(38px, 9.5vw, 44px));
         grid-template-rows: repeat(3, clamp(38px, 9.5vw, 44px));
         gap: 3px;
     }
     .touch-nav-toggle {
-        bottom: clamp(14px, 2.5vh, 20px);
+        bottom: max(68px, calc(env(safe-area-inset-bottom, 0px) + 68px));
         left: clamp(12px, 3.5vw, 20px);
         font-size: 0.68rem;
         padding: 3px 8px;
     }
     .touch-actions {
-        bottom: clamp(14px, 2.5vh, 22px);
+        bottom: max(68px, calc(env(safe-area-inset-bottom, 0px) + 68px));
         right: clamp(12px, 3.5vw, 20px);
         flex-direction: column;
         align-items: center;
@@ -910,18 +921,18 @@ canvas {
 
 @media (pointer: coarse) and (orientation: landscape) {
     .touch-joystick {
-        bottom: 58px;
+        bottom: calc(max(42px, calc(env(safe-area-inset-bottom, 0px) + 42px)) + 44px);
         left: 24px;
         grid-template-columns: repeat(3, 42px);
         grid-template-rows: repeat(3, 42px);
         gap: 3px;
     }
     .touch-nav-toggle {
-        bottom: 16px;
+        bottom: max(42px, calc(env(safe-area-inset-bottom, 0px) + 42px));
         left: 24px;
     }
     .touch-actions {
-        bottom: 16px;
+        bottom: max(42px, calc(env(safe-area-inset-bottom, 0px) + 42px));
         right: 24px;
         flex-direction: column;
         align-items: center;
