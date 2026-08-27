@@ -1069,6 +1069,7 @@ export default function App() {
       hackedAngle: number;
       hackedTurnTimer: number;
       hackedShootTimer: number;
+      shootTimer: number;
 
       constructor(game: Game) {
         this.game = game;
@@ -1088,6 +1089,8 @@ export default function App() {
         this.hackedAngle = (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
         this.hackedTurnTimer = 0;
         this.hackedShootTimer = Math.random() * 300;
+        // Guaranteed initial shot delay between 300ms and 750ms after appearing
+        this.shootTimer = 300 + Math.random() * 450;
       }
 
       update(dt: number) {
@@ -1141,8 +1144,13 @@ export default function App() {
 
           if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
           
-          if (Math.random() < 0.005) {
-            this.game.projectiles.push(new Projectile(this.x + this.width/2, this.y + this.height, 6 * (GAME_HEIGHT/800), 'enemy'));
+          // Guaranteed active shooting for every enemy ship while on screen
+          if (this.y > 0 && this.y < GAME_HEIGHT - 40) {
+            this.shootTimer -= dt;
+            if (this.shootTimer <= 0) {
+              this.shootTimer = 1100 + Math.random() * 900;
+              this.game.projectiles.push(new Projectile(this.x + this.width/2, this.y + this.height, 6 * (GAME_HEIGHT/800), 'enemy'));
+            }
           }
         }
       }
