@@ -2012,8 +2012,8 @@ export default function App() {
       setGameMode('menu');
     } else if (upgradesReturnMode === 'gameover') {
       setGameMode('gameover');
-    } else if (upgradesReturnMode === 'playing' || upgradesReturnMode === 'paused') {
-      setGameMode('playing');
+    } else {
+      setGameMode('paused');
     }
   };
 
@@ -2080,17 +2080,6 @@ export default function App() {
                 <span className="hud-val font-[Orbitron]" id="coins-display">{coins}</span>
               </div>
             </div>
-            
-            {/* Upgrade Armory Button - Visible on screens >= 1080px */}
-            <button 
-              id="hud-upgrade-btn"
-              className="hud-upgrade-btn hidden min-[1080px]:inline-flex"
-              onClick={handleOpenUpgrades}
-              aria-label="Open Upgrade Armory"
-            >
-              <span>⚡</span>
-              <span>UPGRADES</span>
-            </button>
           </div>
           
           <div className="hud-center">
