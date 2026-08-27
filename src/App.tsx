@@ -1213,6 +1213,194 @@ export default function App() {
       }
     }
 
+    class BossWhip {
+      x: number;
+      y: number;
+      startX: number;
+      vy: number;
+      type: string;
+      width: number;
+      height: number;
+      markedForDeletion: boolean;
+      time: number;
+      frequency: number;
+      amplitude: number;
+
+      constructor(x: number, y: number) {
+        this.x = x;
+        this.y = y;
+        this.startX = x;
+        this.vy = 6;
+        this.type = 'enemy';
+        this.width = 12;
+        this.height = 30;
+        this.markedForDeletion = false;
+        this.time = 0;
+        this.frequency = 0.15 + Math.random() * 0.1;
+        this.amplitude = 60 + Math.random() * 40;
+      }
+
+      update(dt: number) {
+        this.time += dt / 16;
+        this.y += this.vy * (dt / 16);
+        this.x = this.startX + Math.sin(this.time * this.frequency) * this.amplitude;
+        if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
+      }
+
+      draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        ctx.fillStyle = '#f43f5e'; // Neon Pink/Red
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#e11d48';
+        ctx.translate(this.x, this.y);
+        let tilt = Math.cos(this.time * this.frequency) * (this.amplitude * this.frequency) * 0.05;
+        ctx.rotate(tilt);
+        ctx.fillRect(-this.width / 2, 0, this.width, this.height);
+        ctx.restore();
+      }
+    }
+
+    class Boss {
+      game: Game;
+      width: number;
+      height: number;
+      x: number;
+      y: number;
+      targetY: number;
+      speed: number;
+      direction: number;
+      maxHp: number;
+      hp: number;
+      markedForDeletion: boolean;
+      shootTimer: number;
+
+      constructor(game: Game, scale: number = 1) {
+        this.game = game;
+        this.width = 200;
+        this.height = 90;
+        this.x = GAME_WIDTH / 2 - this.width / 2;
+        this.y = -this.height - 50; // Start out of bounds
+        this.targetY = 40; // The sticky position it drops to
+        this.speed = 3 * (GAME_WIDTH / 800);
+        this.direction = 1;
+        this.maxHp = 75 * scale;
+        this.hp = this.maxHp;
+        this.markedForDeletion = false;
+        this.shootTimer = 0;
+      }
+      
+      update(dt: number) {
+        // State 1: Drop down into the sticky position
+        if (this.y < this.targetY) {
+            this.y += 2 * (dt/16);
+        } else {
+            // State 2: Hover left and right
+            this.x += this.speed * this.direction * (dt/16);
+            if (this.x <= 20) this.direction = 1;
+            if (this.x + this.width >= GAME_WIDTH - 20) this.direction = -1;
+            
+            // Ability: Fire wild whips from 3 locations
+            this.shootTimer -= dt;
+            if (this.shootTimer <= 0) {
+                // Left, Center, and Right cannons
+                this.game.projectiles.push(new BossWhip(this.x + 20, this.y + this.height - 10));
+                this.game.projectiles.push(new BossWhip(this.x + this.width/2, this.y + this.height));
+                this.game.projectiles.push(new BossWhip(this.x + this.width - 20, this.y + this.height - 10));
+                
+                sfx.playShoot(); 
+                this.shootTimer = 800; // Cooldown between attacks
+            }
+        }
+      }
+      
+      hit(damage: number = 1) {
+          this.hp -= damage;
+          this.game.explosions.push(new Explosion(this.x + Math.random()*this.width, this.y + Math.random()*this.height, 'small'));
+          
+          if (this.hp <= 0 && !this.markedForDeletion) {
+              this.markedForDeletion = true;
+              this.game.explosions.push(new AreaExplosion(this.x + this.width/2, this.y + this.height/2, 200));
+              sfx.playBoom();
+              this.game.addScore(1000);
+              this.game.nextBossScore = this.game.internalScore + 500;
+              
+              // Loot pinata logic
+              for(let i=0; i<8; i++) this.game.drops.push(new Drop(this.x + Math.random()*this.width, this.y + Math.random()*this.height, 'coin'));
+              this.game.drops.push(new Drop(this.x + this.width/2, this.y, 'multiplier', 3));
+              this.game.drops.push(new Drop(this.x + this.width/2 - 30, this.y, 'heart'));
+          }
+      }
+      
+      draw(ctx: CanvasRenderingContext2D) {
+          ctx.save();
+          ctx.translate(this.x, this.y);
+          
+          // 1. Ship Hull (Dark Gray with Red border)
+          ctx.fillStyle = '#1f2937';
+          ctx.beginPath();
+          ctx.moveTo(this.width/2, 0);
+          ctx.lineTo(this.width, this.height/2);
+          ctx.lineTo(this.width - 20, this.height);
+          ctx.lineTo(20, this.height);
+          ctx.lineTo(0, this.height/2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+          
+          // 2. Cockpit / Core
+          ctx.fillStyle = '#991b1b';
+          ctx.beginPath();
+          ctx.ellipse(this.width/2, this.height/2, 30, 15, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#f87171'; // Inner glow
+          ctx.beginPath();
+          ctx.ellipse(this.width/2, this.height/2, 15, 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // 3. Cannons
+          ctx.fillStyle = '#4b5563';
+          ctx.fillRect(10, this.height - 10, 20, 20);
+          ctx.fillRect(this.width/2 - 10, this.height - 5, 20, 20);
+          ctx.fillRect(this.width - 30, this.height - 10, 20, 20);
+          
+          ctx.restore();
+          
+          // 4. Boss Health Bar UI (Only drawn when fully descended)
+          if (this.y >= this.targetY - 10) {
+              ctx.save();
+              let barW = GAME_WIDTH * 0.6;
+              let barH = 12;
+              let barX = (GAME_WIDTH - barW) / 2;
+              let barY = 60; // Positioned just below the standard HUD
+              
+              // Background
+              ctx.fillStyle = 'rgba(0,0,0,0.7)';
+              ctx.fillRect(barX, barY, barW, barH);
+              
+              // Health fill (Red)
+              ctx.fillStyle = '#ef4444';
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = '#ef4444';
+              ctx.fillRect(barX, barY, barW * (Math.max(0, this.hp) / this.maxHp), barH);
+              
+              // Border
+              ctx.strokeStyle = '#fca5a5';
+              ctx.lineWidth = 2;
+              ctx.shadowBlur = 0;
+              ctx.strokeRect(barX, barY, barW, barH);
+              
+              // Boss Title
+              ctx.fillStyle = '#fca5a5';
+              ctx.font = 'bold 12px Orbitron, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText('A L I E N   O V E R L O R D', GAME_WIDTH / 2, barY - 8);
+              ctx.restore();
+          }
+      }
+    }
+
     class Projectile {
       x: number;
       y: number;
@@ -1437,6 +1625,32 @@ export default function App() {
             }
           }
         });
+
+        // Damage Boss (25%)
+        if (game.boss && !game.boss.markedForDeletion && !(this as any).hitBoss) {
+          const ex = game.boss.x + game.boss.width / 2;
+          const ey = game.boss.y + game.boss.height / 2;
+          const dx = ex - this.x;
+          const dy = ey - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist <= this.radius + Math.max(game.boss.width, game.boss.height) / 2) {
+            (this as any).hitBoss = true;
+            game.boss.hit(game.boss.maxHp * 0.25);
+            for (let k = 0; k < 12; k++) {
+              const a = Math.random() * Math.PI * 2;
+              const s = Math.random() * 8 + 3;
+              this.particles.push({
+                x: ex,
+                y: ey,
+                vx: Math.cos(a) * s,
+                vy: Math.sin(a) * s,
+                size: 5,
+                alpha: 1,
+                color: '#34d399'
+              });
+            }
+          }
+        }
 
         // Terminate / extinct bypassing asteroids
         game.asteroids.forEach(asteroid => {
@@ -1878,7 +2092,7 @@ export default function App() {
       starfield: Starfield;
       player!: Player;
       enemies: Enemy[] = [];
-      projectiles: (Projectile | SpecialMissile | FireBall | HackedProjectile)[] = [];
+      projectiles: (Projectile | BossWhip | SpecialMissile | FireBall | HackedProjectile)[] = [];
       explosions: (Explosion | AreaExplosion | ShieldSpark | NeonShockwave | AsteroidExtinctionEffect)[] = [];
       drops: Drop[] = [];
       allies: Ally[] = [];
@@ -1888,6 +2102,11 @@ export default function App() {
       baseEnemyInterval = 1200;
       asteroidTimer = 0;
       nextAsteroidSpawn = 20000 + Math.random() * 25000;
+      
+      boss: Boss | null = null;
+      nextBossScore = 500;
+      bossEncounters = 0;
+      internalScore = 0;
 
       shieldsCount = shieldsCountRef.current;
       alienHackTimer = 0;
@@ -1910,6 +2129,10 @@ export default function App() {
         this.gameTime = 0;
         this.asteroidTimer = 0;
         this.nextAsteroidSpawn = 20000 + Math.random() * 25000;
+        this.boss = null;
+        this.nextBossScore = 500;
+        this.bossEncounters = 0;
+        this.internalScore = 0;
         this.shieldsCount = shieldsCountRef.current;
         this.alienHackTimer = 0;
         setScore(0);
@@ -1981,16 +2204,31 @@ export default function App() {
           setActiveAlienSecs(0);
         }
 
-        let currentInterval = Math.max(500, this.baseEnemyInterval - (this.gameTime / 60000) * 400);
+        // Trigger Boss
+        if (this.internalScore >= this.nextBossScore && !this.boss) {
+          this.bossEncounters++;
+          this.boss = new Boss(this, 1 + (this.bossEncounters * 0.4)); // Scale HP slightly each encounter
+          this.nextBossScore = Infinity;
+        }
 
-        if (this.enemyTimer > currentInterval) {
-          let numToSpawn = 1 + Math.floor(Math.random() * (this.gameTime / 50000));
-          for(let i = 0; i < Math.min(numToSpawn, 5); i++) {
-            this.enemies.push(new Enemy(this));
+        if (this.boss) {
+          this.boss.update(dt);
+          if (this.boss.markedForDeletion) {
+            this.boss = null;
           }
-          this.enemyTimer = 0;
         } else {
-          this.enemyTimer += dt;
+          // ONLY spawn normal enemies if the boss is NOT currently active
+          let currentInterval = Math.max(500, this.baseEnemyInterval - (this.gameTime / 60000) * 400);
+
+          if (this.enemyTimer > currentInterval) {
+            let numToSpawn = 1 + Math.floor(Math.random() * (this.gameTime / 50000));
+            for(let i = 0; i < Math.min(numToSpawn, 5); i++) {
+              this.enemies.push(new Enemy(this));
+            }
+            this.enemyTimer = 0;
+          } else {
+            this.enemyTimer += dt;
+          }
         }
 
         this.projectiles.forEach(p => {
@@ -2000,11 +2238,14 @@ export default function App() {
         this.enemies.forEach(e => e.update(dt));
         this.allies.forEach(a => a.update(dt));
         
-        this.asteroidTimer += dt;
-        if (this.asteroidTimer > this.nextAsteroidSpawn) {
-          this.asteroids.push(new Asteroid(this));
-          this.asteroidTimer = 0;
-          this.nextAsteroidSpawn = 30000 + Math.random() * 30000;
+        // Pause asteroids when boss is active too
+        if (!this.boss) {
+          this.asteroidTimer += dt;
+          if (this.asteroidTimer > this.nextAsteroidSpawn) {
+            this.asteroids.push(new Asteroid(this));
+            this.asteroidTimer = 0;
+            this.nextAsteroidSpawn = 30000 + Math.random() * 30000;
+          }
         }
         this.asteroids.forEach(a => a.update(dt));
         
@@ -2036,6 +2277,25 @@ export default function App() {
 
         this.projectiles.forEach(proj => {
           if (proj.type === 'player' || proj.type === 'special_missile' || proj.type === 'ally' || proj.type === 'hacked_projectile') {
+            
+            // Check Boss
+            if (this.boss && !this.boss.markedForDeletion) {
+              let pLeft = proj.x - proj.width/2;
+              let pTop = proj.type === 'special_missile' ? proj.y - proj.height/2 : proj.y;
+              if (rectIntersect(pLeft, pTop, proj.width, proj.height, this.boss.x, this.boss.y, this.boss.width, this.boss.height)) {
+                if (proj.type === 'special_missile') {
+                  (proj as SpecialMissile).explode(this);
+                } else {
+                  proj.markedForDeletion = true;
+                  let dmg = 1;
+                  if (proj instanceof FireBall) dmg = 3;
+                  this.boss.hit(dmg);
+                  // Flash visual effect can be implemented by adding a flash timer, but we'll stick to particles for now
+                }
+              }
+            }
+
+            // Check standard enemies
             this.enemies.forEach(enemy => {
               if (!enemy.markedForDeletion) {
                 let pLeft = proj.x - proj.width/2;
@@ -2208,6 +2468,7 @@ export default function App() {
           this.projectiles.forEach(p => p.draw(ctx));
           this.enemies.forEach(e => e.draw(ctx));
           this.asteroids.forEach(a => a.draw(ctx));
+          if (this.boss) this.boss.draw(ctx);
           this.allies.forEach(a => a.draw(ctx));
           this.player.draw(ctx);
           this.explosions.forEach(e => e.draw(ctx));
@@ -2215,6 +2476,7 @@ export default function App() {
       }
 
       addScore(points: number) {
+        this.internalScore += points;
         setScore(prev => {
           const ns = prev + points;
           return ns;
