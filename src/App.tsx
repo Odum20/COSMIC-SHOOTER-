@@ -48,7 +48,7 @@ export default function App() {
     return DEFAULT_KEY_BINDINGS;
   });
 
-  const [energyBars, setEnergyBars] = useState(1);
+  const [energyBars, setEnergyBars] = useState(3);
   const [showControls, setShowControls] = useState(false);
   const [showUpgrades, setShowUpgrades] = useState(false);
   const [upgradesReturnMode, setUpgradesReturnMode] = useState<'menu' | 'playing' | 'paused' | 'gameover'>('menu');
@@ -335,12 +335,17 @@ export default function App() {
         } catch(e) {}
       },
       playSpecial() {
-        if (!this.initialized || !this.specialSynth) return;
+        if (!this.initialized) return;
         const now = Tone.now();
-        if (now - this.lastSpecialTime < 0.1) return;
+        if (now - this.lastSpecialTime < 0.12) return;
         this.lastSpecialTime = now;
         try {
-          this.specialSynth.triggerAttackRelease("C3", "8n", now);
+          if (this.specialSynth) {
+            this.specialSynth.triggerAttackRelease("E2", "8n", now);
+          }
+          if (this.boomSynth) {
+            this.boomSynth.triggerAttackRelease("16n", now);
+          }
         } catch(e) {}
       },
       playShield() {
@@ -788,11 +793,11 @@ export default function App() {
           }
         }
 
-        // Special Missile
+        // Neon Green Shockwave Special (Consumes 1 energy bar per shockwave)
         if (this.specialTimer > 0) this.specialTimer -= dt;
         if (isSpecialPressed && this.specialTimer <= 0 && this.specialCharges > 0) {
           this.fireSpecial();
-          this.specialTimer = 500;
+          this.specialTimer = 450;
           this.specialCharges--;
           this.game.updateEnergyHUD();
         }
@@ -812,12 +817,7 @@ export default function App() {
       
       fireSpecial() {
         sfx.playSpecial();
-        const spreadAngle = 25 * (Math.PI / 180);
-        const speed = -10;
-        
-        this.game.projectiles.push(new SpecialMissile(this.x + this.width / 2, this.y, speed, 0));
-        this.game.projectiles.push(new SpecialMissile(this.x + this.width / 2, this.y, speed, -spreadAngle));
-        this.game.projectiles.push(new SpecialMissile(this.x + this.width / 2, this.y, speed, spreadAngle));
+        this.game.explosions.push(new NeonShockwave(this.x + this.width / 2, this.y + this.height / 2));
       }
 
       hit() {
@@ -1314,6 +1314,371 @@ export default function App() {
       }
     }
 
+    class NeonShockwave {
+      x: number;
+      y: number;
+      radius: number;
+      maxRadius: number;
+      speed: number;
+      markedForDeletion: boolean;
+      alpha: number;
+      particles: { x: number; y: number; vx: number; vy: number; size: number; alpha: number; color: string }[];
+      arcs: { angle: number; length: number; speed: number; width: number }[];
+      hitEnemies: Set<Enemy>;
+      hitAsteroids: Set<Asteroid>;
+
+      constructor(x: number, y: number) {
+        this.x = x;
+        this.y = y;
+        this.radius = 12;
+        this.maxRadius = Math.max(GAME_WIDTH, GAME_HEIGHT) * 1.35;
+        this.speed = 25;
+        this.markedForDeletion = false;
+        this.alpha = 1;
+        this.particles = [];
+        this.hitEnemies = new Set();
+        this.hitAsteroids = new Set();
+        this.arcs = [];
+
+        for (let i = 0; i < 8; i++) {
+          this.arcs.push({
+            angle: Math.random() * Math.PI * 2,
+            length: 0.35 + Math.random() * 0.5,
+            speed: (Math.random() - 0.5) * 0.08,
+            width: 3 + Math.random() * 3
+          });
+        }
+      }
+
+      update(dt: number, game: Game) {
+        const rate = dt / 16;
+        this.radius += this.speed * rate;
+        this.alpha = Math.max(0, 1 - (this.radius / this.maxRadius));
+
+        // Spawn trailing glowing emerald particle sparks along the wavefront
+        if (this.radius < this.maxRadius * 0.85) {
+          for (let i = 0; i < 5; i++) {
+            const pAngle = Math.random() * Math.PI * 2;
+            const pRadius = this.radius + (Math.random() - 0.5) * 14;
+            const pSpeed = (Math.random() * 4 + 2);
+            this.particles.push({
+              x: this.x + Math.cos(pAngle) * pRadius,
+              y: this.y + Math.sin(pAngle) * pRadius,
+              vx: Math.cos(pAngle) * pSpeed,
+              vy: Math.sin(pAngle) * pSpeed,
+              size: Math.random() * 4 + 2,
+              alpha: 1,
+              color: Math.random() > 0.3 ? '#10b981' : (Math.random() > 0.5 ? '#34d399' : '#a7f3d0')
+            });
+          }
+        }
+
+        // Update particle sparks
+        this.particles.forEach(p => {
+          p.x += p.vx * rate;
+          p.y += p.vy * rate;
+          p.alpha -= 0.035 * rate;
+          p.size *= 0.96;
+        });
+        this.particles = this.particles.filter(p => p.alpha > 0);
+
+        // Rotate electrical arcs
+        this.arcs.forEach(arc => {
+          arc.angle += arc.speed * rate;
+        });
+
+        // Vaporize enemy projectiles immediately
+        game.projectiles.forEach(proj => {
+          if (proj.type === 'enemy' || proj.type === 'hacked_projectile') {
+            const dx = proj.x - this.x;
+            const dy = proj.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist <= this.radius + 18) {
+              proj.markedForDeletion = true;
+              for (let k = 0; k < 3; k++) {
+                this.particles.push({
+                  x: proj.x,
+                  y: proj.y,
+                  vx: (Math.random() - 0.5) * 4,
+                  vy: (Math.random() - 0.5) * 4,
+                  size: 3,
+                  alpha: 0.9,
+                  color: '#34d399'
+                });
+              }
+            }
+          }
+        });
+
+        // Annihilate enemies caught in path
+        game.enemies.forEach(enemy => {
+          if (enemy.markedForDeletion || this.hitEnemies.has(enemy)) return;
+          const ex = enemy.x + enemy.width / 2;
+          const ey = enemy.y + enemy.height / 2;
+          const dx = ex - this.x;
+          const dy = ey - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist <= this.radius + Math.max(enemy.width, enemy.height) / 2) {
+            this.hitEnemies.add(enemy);
+            enemy.hp = 0;
+            enemy.hit();
+            for (let k = 0; k < 8; k++) {
+              const a = Math.random() * Math.PI * 2;
+              const s = Math.random() * 5 + 3;
+              this.particles.push({
+                x: ex,
+                y: ey,
+                vx: Math.cos(a) * s,
+                vy: Math.sin(a) * s,
+                size: 4,
+                alpha: 1,
+                color: '#10b981'
+              });
+            }
+          }
+        });
+
+        // Terminate / extinct bypassing asteroids
+        game.asteroids.forEach(asteroid => {
+          if (asteroid.markedForDeletion || this.hitAsteroids.has(asteroid)) return;
+          const dx = asteroid.x - this.x;
+          const dy = asteroid.y - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist <= this.radius + asteroid.radius) {
+            this.hitAsteroids.add(asteroid);
+            asteroid.markedForDeletion = true;
+            game.explosions.push(new AsteroidExtinctionEffect(asteroid.x, asteroid.y, asteroid.radius));
+            sfx.playBoom();
+            game.addScore(250);
+          }
+        });
+
+        if (this.radius >= this.maxRadius || this.alpha <= 0) {
+          this.markedForDeletion = true;
+        }
+      }
+
+      draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        
+        // 1. Draw glowing spark particles
+        this.particles.forEach(p => {
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = Math.max(0, p.alpha);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(1, p.size), 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        if (this.alpha > 0.01) {
+          // 2. Radial emerald energy field
+          const grad = ctx.createRadialGradient(this.x, this.y, Math.max(0, this.radius - 90), this.x, this.y, this.radius);
+          grad.addColorStop(0, 'rgba(16, 185, 129, 0)');
+          grad.addColorStop(0.7, `rgba(16, 185, 129, ${this.alpha * 0.18})`);
+          grad.addColorStop(0.92, `rgba(52, 211, 153, ${this.alpha * 0.35})`);
+          grad.addColorStop(1, `rgba(167, 243, 208, ${this.alpha * 0.6})`);
+          
+          ctx.fillStyle = grad;
+          ctx.globalAlpha = this.alpha;
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 3. Primary high-intensity neon shock ring
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = '#00ff88';
+          ctx.strokeStyle = `rgba(52, 211, 153, ${Math.min(1, this.alpha * 1.2)})`;
+          ctx.lineWidth = Math.max(3, 8 * this.alpha);
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // 4. Inner sharp core ring
+          ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(1, this.alpha * 1.5)})`;
+          ctx.lineWidth = Math.max(1.5, 3 * this.alpha);
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, Math.max(1, this.radius - 3), 0, Math.PI * 2);
+          ctx.stroke();
+
+          // 5. Electrical arcs along the wavefront
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = '#34d399';
+          this.arcs.forEach(arc => {
+            ctx.strokeStyle = `rgba(167, 243, 208, ${this.alpha * 0.9})`;
+            ctx.lineWidth = arc.width * this.alpha;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius + (Math.random() - 0.5) * 4, arc.angle, arc.angle + arc.length);
+            ctx.stroke();
+          });
+        }
+
+        ctx.restore();
+      }
+    }
+
+    class AsteroidExtinctionEffect {
+      x: number;
+      y: number;
+      radius: number;
+      markedForDeletion: boolean;
+      life: number;
+      maxLife: number;
+      shards: { x: number; y: number; vx: number; vy: number; size: number; rotation: number; rotSpeed: number; color: string; points: { x: number; y: number }[] }[];
+      plasmaRings: { r: number; maxR: number; alpha: number; width: number }[];
+      lightningArcs: { x1: number; y1: number; x2: number; y2: number; life: number }[];
+
+      constructor(x: number, y: number, radius: number) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.markedForDeletion = false;
+        this.life = 0;
+        this.maxLife = 40;
+        this.shards = [];
+        this.plasmaRings = [
+          { r: 5, maxR: radius * 2.4, alpha: 1, width: 4 },
+          { r: 2, maxR: radius * 1.6, alpha: 1, width: 6 }
+        ];
+        this.lightningArcs = [];
+
+        const count = 18 + Math.floor(Math.random() * 8);
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+          const speed = (Math.random() * 5 + 3) * (GAME_HEIGHT / 800);
+          const shardSize = Math.random() * 10 + 6;
+          
+          const pts: { x: number; y: number }[] = [];
+          const numPts = 4 + Math.floor(Math.random() * 3);
+          for (let p = 0; p < numPts; p++) {
+            const pa = (p / numPts) * Math.PI * 2;
+            const pr = shardSize * (0.6 + Math.random() * 0.4);
+            pts.push({ x: Math.cos(pa) * pr, y: Math.sin(pa) * pr });
+          }
+
+          this.shards.push({
+            x: this.x + Math.cos(angle) * (radius * 0.3),
+            y: this.y + Math.sin(angle) * (radius * 0.3),
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: shardSize,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 0.2,
+            color: Math.random() > 0.4 ? '#34d399' : '#059669',
+            points: pts
+          });
+        }
+
+        for (let j = 0; j < 6; j++) {
+          const a1 = Math.random() * Math.PI * 2;
+          const a2 = a1 + (Math.random() * 1.5 - 0.75);
+          const r1 = Math.random() * radius * 0.5;
+          const r2 = Math.random() * radius * 1.2;
+          this.lightningArcs.push({
+            x1: this.x + Math.cos(a1) * r1,
+            y1: this.y + Math.sin(a1) * r1,
+            x2: this.x + Math.cos(a2) * r2,
+            y2: this.y + Math.sin(a2) * r2,
+            life: 1
+          });
+        }
+      }
+
+      update(dt: number) {
+        const rate = dt / 16;
+        this.life += rate;
+
+        this.plasmaRings.forEach(ring => {
+          ring.r += (ring.maxR - ring.r) * 0.12 * rate + 2 * rate;
+          ring.alpha = Math.max(0, 1 - (ring.r / ring.maxR));
+        });
+
+        this.shards.forEach(s => {
+          s.x += s.vx * rate;
+          s.y += s.vy * rate;
+          s.rotation += s.rotSpeed * rate;
+          s.size *= 0.97;
+        });
+
+        this.lightningArcs.forEach(l => {
+          l.life -= 0.08 * rate;
+        });
+
+        if (this.life >= this.maxLife) {
+          this.markedForDeletion = true;
+        }
+      }
+
+      draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        const overallAlpha = Math.max(0, 1 - (this.life / this.maxLife));
+
+        this.shards.forEach(s => {
+          ctx.save();
+          ctx.translate(s.x, s.y);
+          ctx.rotate(s.rotation);
+          ctx.globalAlpha = overallAlpha;
+
+          ctx.fillStyle = '#1e293b';
+          ctx.strokeStyle = s.color;
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = '#10b981';
+
+          ctx.beginPath();
+          if (s.points.length > 0) {
+            ctx.moveTo(s.points[0].x, s.points[0].y);
+            for (let i = 1; i < s.points.length; i++) {
+              ctx.lineTo(s.points[i].x, s.points[i].y);
+            }
+            ctx.closePath();
+          }
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        });
+
+        this.plasmaRings.forEach(ring => {
+          if (ring.alpha > 0) {
+            ctx.globalAlpha = ring.alpha * overallAlpha;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, ring.r, 0, Math.PI * 2);
+            ctx.strokeStyle = '#34d399';
+            ctx.lineWidth = ring.width;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = '#00ff88';
+            ctx.stroke();
+
+            const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, ring.r);
+            grad.addColorStop(0, `rgba(255, 255, 255, ${ring.alpha * 0.4})`);
+            grad.addColorStop(0.5, `rgba(16, 185, 129, ${ring.alpha * 0.25})`);
+            grad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+            ctx.fillStyle = grad;
+            ctx.fill();
+          }
+        });
+
+        this.lightningArcs.forEach(l => {
+          if (l.life > 0) {
+            ctx.globalAlpha = l.life * overallAlpha;
+            ctx.strokeStyle = '#a7f3d0';
+            ctx.lineWidth = 2.5;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#34d399';
+            
+            const midX = (l.x1 + l.x2) / 2 + (Math.random() - 0.5) * 10;
+            const midY = (l.y1 + l.y2) / 2 + (Math.random() - 0.5) * 10;
+            ctx.beginPath();
+            ctx.moveTo(l.x1, l.y1);
+            ctx.lineTo(midX, midY);
+            ctx.lineTo(l.x2, l.y2);
+            ctx.stroke();
+          }
+        });
+
+        ctx.restore();
+      }
+    }
+
     class Explosion {
       x: number;
       y: number;
@@ -1514,7 +1879,7 @@ export default function App() {
       player!: Player;
       enemies: Enemy[] = [];
       projectiles: (Projectile | SpecialMissile | FireBall | HackedProjectile)[] = [];
-      explosions: (Explosion | AreaExplosion | ShieldSpark)[] = [];
+      explosions: (Explosion | AreaExplosion | ShieldSpark | NeonShockwave | AsteroidExtinctionEffect)[] = [];
       drops: Drop[] = [];
       allies: Ally[] = [];
       asteroids: Asteroid[] = [];
@@ -1644,8 +2009,8 @@ export default function App() {
         this.asteroids.forEach(a => a.update(dt));
         
         this.explosions.forEach(e => {
-          if (e instanceof AreaExplosion) e.update(dt, this);
-          else e.update(dt);
+          if (e instanceof AreaExplosion || e instanceof NeonShockwave) (e as any).update(dt, this);
+          else (e as any).update(dt);
         });
         this.drops.forEach(d => d.update(dt));
 
@@ -1795,8 +2160,8 @@ export default function App() {
               updateCoins(prev => prev + 5);
               sfx.playPowerup();
             } else if (drop.type === 'energy') {
-              if (this.player.specialCharges < this.player.maxEnergy * 3) {
-                this.player.specialCharges = Math.min(this.player.specialCharges + 3, this.player.maxEnergy * 3);
+              if (this.player.specialCharges < this.player.maxEnergy) {
+                this.player.specialCharges = Math.min(this.player.specialCharges + 1, this.player.maxEnergy);
                 this.updateEnergyHUD();
                 sfx.playPowerup();
               }
@@ -1861,8 +2226,7 @@ export default function App() {
       }
 
       updateEnergyHUD() {
-        const bars = Math.ceil(this.player.specialCharges / 3);
-        setEnergyBars(bars);
+        setEnergyBars(Math.max(0, Math.min(5, this.player.specialCharges)));
       }
 
       gameOver() {
@@ -2250,9 +2614,46 @@ export default function App() {
                 id="t-special" 
                 className={`t-btn-special ${pressedButtons['x'] ? 'active' : ''}`}
                 {...bindControl('x')}
-                aria-label="Special Attack"
+                aria-label="Special Attack: Neon Shockwave"
               >
-                SPEC
+                <svg className="w-9 h-9 pointer-events-none drop-shadow-sm" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="zapGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#FFD700" />
+                      <stop offset="100%" stopColor="#FFA500" />
+                    </linearGradient>
+                    <linearGradient id="wifiGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+                      <stop offset="0%" stopColor="#34d399" />
+                      <stop offset="100%" stopColor="#059669" />
+                    </linearGradient>
+                    
+                    <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity={0.3} />
+                    </filter>
+                  </defs>
+
+                  <path 
+                    d="M 58 35 L 45 35 L 40 55 L 55 55 L 45 85 L 65 50 L 50 50 Z" 
+                    fill="url(#zapGradient)" 
+                    filter="url(#dropShadow)"
+                  />
+
+                  <path 
+                    d="M 40 30 A 15 15 0 0 1 60 30" 
+                    fill="none" 
+                    stroke="url(#wifiGradient)" 
+                    strokeWidth={5} 
+                    strokeLinecap="round"
+                  />
+
+                  <path 
+                    d="M 30 20 A 30 30 0 0 1 70 20" 
+                    fill="none" 
+                    stroke="url(#wifiGradient)" 
+                    strokeWidth={5} 
+                    strokeLinecap="round"
+                  />
+                </svg>
               </button>
             </div>
             <button 
@@ -2309,14 +2710,14 @@ export default function App() {
                     <p className="font-[Orbitron] text-blue-400 mb-2 text-sm tracking-wider">KEYBOARD</p>
                     <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">WASD</span> / <span className="key-badge">Arrows</span> : Move</p>
                     <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">{keyBindings.shoot.toUpperCase()}</span> / <span className="key-badge">Space</span> : Shoot</p>
-                    <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">{keyBindings.special.toUpperCase()}</span> : Special Missile</p>
+                    <p className="text-gray-300 text-xs mb-1.5"><span className="key-badge">{keyBindings.special.toUpperCase()}</span> : Neon Shockwave (1⚡)</p>
                     <p className="text-gray-300 text-xs"><span className="key-badge">{keyBindings.shield.toUpperCase()}</span> : Deploy Shield</p>
                   </div>
                   <div className="flex-1 border-t sm:border-t-0 sm:border-l border-gray-700 pt-3 sm:pt-0 sm:pl-4">
                     <p className="font-[Orbitron] text-green-400 mb-2 text-sm tracking-wider">TOUCH</p>
                     <p className="text-gray-300 text-xs mb-1.5">● <span className="text-white">D-Pad / Swipe</span> : Direct Ship</p>
                     <p className="text-gray-300 text-xs mb-1.5">● <span className="text-red-400">SHOOT</span> : Fire (Hold)</p>
-                    <p className="text-gray-300 text-xs mb-1.5">● <span className="text-green-400">SPEC</span> : Special Missile</p>
+                    <p className="text-gray-300 text-xs mb-1.5">● <span className="text-green-400">SPEC</span> : Neon Shockwave (1⚡)</p>
                     <p className="text-gray-300 text-xs">● <span className="text-sky-400">SHIELD</span> : Kinetic Orbit Shield</p>
                   </div>
                 </div>
@@ -2570,7 +2971,7 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-300">Special Missile:</span>
+                  <span className="text-gray-300">Neon Shockwave:</span>
                   <button 
                     className={`key-record-btn ${rebindAction === 'special' ? 'recording' : ''}`}
                     onClick={() => setRebindAction(rebindAction === 'special' ? null : 'special')}
