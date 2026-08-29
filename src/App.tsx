@@ -2250,7 +2250,7 @@ export default function App() {
                 } else {
                   proj.markedForDeletion = true;
                   let dmg = 1;
-                  if (proj instanceof FireBall) dmg = 3;
+                  if (proj instanceof FireBall) dmg = 10;
                   this.boss.hit(dmg);
                   // Flash visual effect can be implemented by adding a flash timer, but we'll stick to particles for now
                 }
