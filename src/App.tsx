@@ -1094,57 +1094,15 @@ export default function App() {
       }
 
       update(dt: number) {
-        if (this.game.alienHackTimer > 0) {
-          if (!this.isHacked) {
-            this.isHacked = true;
-            this.hackedAngle = Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2;
-          }
+        // When Alien Laser Hack is active, enemies are unable to shoot but move normally
+        this.y += this.speed * (dt/16);
+        this.x = this.startX + Math.sin(this.y * this.frequency) * this.amplitude;
+        this.x = Math.max(0, Math.min(GAME_WIDTH - this.width, this.x));
 
-          this.hackedTurnTimer += dt;
-          if (this.hackedTurnTimer > 700) {
-            this.hackedTurnTimer = 0;
-            // Target nearest enemy ship for friendly fire
-            let closestOther: Enemy | null = null;
-            let closestDist = 99999;
-            this.game.enemies.forEach(other => {
-              if (other !== this && !other.markedForDeletion) {
-                const d = Math.hypot(other.x - this.x, other.y - this.y);
-                if (d < closestDist) {
-                  closestDist = d;
-                  closestOther = other;
-                }
-              }
-            });
+        if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
 
-            if (closestOther) {
-              this.hackedAngle = Math.atan2((closestOther as Enemy).y - this.y, (closestOther as Enemy).x - this.x);
-            } else {
-              this.hackedAngle = (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
-            }
-          }
-
-          this.x += Math.cos(this.hackedAngle) * this.speed * 1.8 * (dt / 16);
-          this.y += Math.sin(this.hackedAngle) * this.speed * 1.2 * (dt / 16);
-          this.x = Math.max(10, Math.min(GAME_WIDTH - this.width - 10, this.x));
-          this.y = Math.max(10, Math.min(GAME_HEIGHT - this.height - 120, this.y));
-
-          this.hackedShootTimer -= dt;
-          if (this.hackedShootTimer <= 0) {
-            this.hackedShootTimer = 350 + Math.random() * 250;
-            const projSpeed = 9;
-            const pvx = Math.cos(this.hackedAngle) * projSpeed;
-            const pvy = Math.sin(this.hackedAngle) * projSpeed;
-            this.game.projectiles.push(new HackedProjectile(this.x + this.width/2, this.y + this.height/2, pvx, pvy));
-          }
-        } else {
-          this.isHacked = false;
-          this.y += this.speed * (dt/16);
-          this.x = this.startX + Math.sin(this.y * this.frequency) * this.amplitude;
-          this.x = Math.max(0, Math.min(GAME_WIDTH - this.width, this.x));
-
-          if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
-          
-          // Guaranteed active shooting for every enemy ship while on screen
+        if (this.game.alienHackTimer <= 0) {
+          // Guaranteed active shooting for every enemy ship while on screen (when hack is not active)
           if (this.y > 0 && this.y < GAME_HEIGHT - 40) {
             this.shootTimer -= dt;
             if (this.shootTimer <= 0) {
@@ -1299,13 +1257,17 @@ export default function App() {
             if (this.x <= 20) this.direction = 1;
             if (this.x + this.width >= GAME_WIDTH - 20) this.direction = -1;
             
-            // Ability: Fire wild whips from 3 locations
+            // Ability: Fire wild whips from 3 locations (or 1 straight laser if Alien Laser Hack is active)
             this.shootTimer -= dt;
             if (this.shootTimer <= 0) {
-                // Left, Center, and Right cannons
-                this.game.projectiles.push(new BossWhip(this.x + 20, this.y + this.height - 10));
-                this.game.projectiles.push(new BossWhip(this.x + this.width/2, this.y + this.height));
-                this.game.projectiles.push(new BossWhip(this.x + this.width - 20, this.y + this.height - 10));
+                if (this.game.alienHackTimer > 0) {
+                    this.game.projectiles.push(new Projectile(this.x + this.width/2, this.y + this.height, 8 * (GAME_HEIGHT/800), 'enemy'));
+                } else {
+                    // Left, Center, and Right cannons
+                    this.game.projectiles.push(new BossWhip(this.x + 20, this.y + this.height - 10));
+                    this.game.projectiles.push(new BossWhip(this.x + this.width/2, this.y + this.height));
+                    this.game.projectiles.push(new BossWhip(this.x + this.width - 20, this.y + this.height - 10));
+                }
                 
                 sfx.playShoot(); 
                 this.shootTimer = 800; // Cooldown between attacks
@@ -2148,8 +2110,8 @@ export default function App() {
         }
 
         if (pendingAlienRef.current) {
-          this.alienHackTimer = 5000;
-          setActiveAlienSecs(5);
+          this.alienHackTimer = 10000;
+          setActiveAlienSecs(10);
           pendingAlienRef.current = false;
         } else {
           setActiveAlienSecs(0);
@@ -2430,8 +2392,8 @@ export default function App() {
               setActiveFlameSecs(8);
               sfx.playPowerup();
             } else if (drop.type === 'alien') {
-              this.alienHackTimer = 5000;
-              setActiveAlienSecs(5);
+              this.alienHackTimer = 10000;
+              setActiveAlienSecs(10);
               sfx.playAlienHack();
             } else if (drop.type === 'multiplier') {
               sfx.playPowerup();
@@ -2678,11 +2640,11 @@ export default function App() {
     updateCoins(prev => prev - 50);
     setPurchasedAlien(true);
     if (gameRef.current && (modeRef.current === 'playing' || modeRef.current === 'paused')) {
-      gameRef.current.alienHackTimer = Math.max(0, gameRef.current.alienHackTimer) + 5000;
+      gameRef.current.alienHackTimer = Math.max(0, gameRef.current.alienHackTimer) + 10000;
       setActiveAlienSecs(Math.ceil(gameRef.current.alienHackTimer / 1000));
     } else {
       pendingAlienRef.current = true;
-      setActiveAlienSecs(5);
+      setActiveAlienSecs(10);
     }
     if (sfxRef.current) sfxRef.current.playAlienHack();
   };
@@ -2749,7 +2711,7 @@ export default function App() {
             </div>
           )}
           {activeAlienSecs > 0 && (
-            <div className="buff-pill alien" title={`Alien Astro Hack (${activeAlienSecs}s)`}>
+            <div className="buff-pill alien" title={`Alien Laser Hack (${activeAlienSecs}s)`}>
               <span className="text-sm">👽</span>
               <span>{activeAlienSecs}s</span>
             </div>
@@ -3175,14 +3137,14 @@ export default function App() {
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xl">👽</span>
-                      <span className="font-[Orbitron] text-xs font-bold text-purple-400">Alien Astro Hack</span>
+                      <span className="font-[Orbitron] text-xs font-bold text-purple-400">Alien Laser Hack</span>
                     </div>
                     <span className="bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-bold px-2 py-0.5 rounded font-[Orbitron]">
                       50 🪙
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-300 leading-snug mb-2.5">
-                    Hacks alien fleet telemetry for 5s, forcing them to bank 90° and turn weapons against each other in friendly fire!
+                    Disables enemy ship shooting for 10s and forces the Overlord boss to fire a single straight laser instead of wavy whips!
                   </p>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-700/60 mt-auto">
@@ -3190,7 +3152,7 @@ export default function App() {
                     {activeAlienSecs > 0 ? (
                       <span className="text-purple-300 font-bold animate-pulse">ACTIVE: {activeAlienSecs}s</span>
                     ) : (
-                      <span>Duration: 5s</span>
+                      <span>Duration: 10s</span>
                     )}
                   </span>
                   <button
