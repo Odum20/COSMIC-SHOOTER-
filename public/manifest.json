@@ -1,0 +1,24 @@
+{
+  "id": "/",
+  "name": "Cosmic Shooter",
+  "short_name": "CosmicShooter",
+  "description": "An action-packed 2D arcade space shooter featuring upgrade armory, kinetic orbit shields, thermal plasma flamethrowers, alien laser hacks, and retro synth audio.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "fullscreen",
+    "minimal-ui"
+  ],
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
