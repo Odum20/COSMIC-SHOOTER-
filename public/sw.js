@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cosmic-shooter-v1';
+const CACHE_NAME = 'cosmic-shooter-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -29,6 +29,10 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
@@ -48,6 +52,7 @@ self.addEventListener('fetch', (event) => {
           if (event.request.mode === 'navigate') {
             return caches.match('/index.html');
           }
+          return new Response('', { status: 408, statusText: 'Offline' });
         });
       })
   );

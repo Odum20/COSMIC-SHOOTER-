@@ -15,9 +15,9 @@
   "theme_color": "#090d16",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "https://res.cloudinary.com/dukipuswv/image/upload/v1791523771/1787728140572_hur61k.jpg",
       "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "type": "image/jpeg",
       "purpose": "any maskable"
     }
   ]

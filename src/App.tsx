@@ -4,6 +4,9 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react';
+import { collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp } from "firebase/firestore";
+import { db, handleFirestoreError, OperationType } from "./firebase";
+import { LeaderboardModal, LeaderboardEntry } from './components/LeaderboardModal';
 
 declare const Tone: any;
 
@@ -47,6 +50,88 @@ export default function App() {
     } catch {}
     return DEFAULT_KEY_BINDINGS;
   });
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [playerName, setPlayerName] = useState(() => {
+    try {
+      return localStorage.getItem('spaceShooterPlayerName') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [highlightedScoreId, setHighlightedScoreId] = useState<string | null>(null);
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle');
+
+  const fetchLeaderboard = async (optimisticEntry?: LeaderboardEntry) => {
+    setIsLoadingLeaderboard(true);
+    setLeaderboardError(null);
+    try {
+      const q = query(collection(db, "scores"), orderBy("score", "desc"), limit(50));
+      const querySnapshot = await getDocs(q);
+      const scores: LeaderboardEntry[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        scores.push({
+          id: docSnap.id,
+          playerName: String(data.playerName || 'PILOT'),
+          score: Number(data.score || 0),
+        });
+      });
+
+      if (optimisticEntry && !scores.some((s) => s.id === optimisticEntry.id)) {
+        scores.push(optimisticEntry);
+        scores.sort((a, b) => b.score - a.score);
+      }
+
+      setLeaderboard(scores);
+    } catch (err) {
+      setLeaderboardError('Unable to load ranks');
+      try {
+        handleFirestoreError(err, OperationType.LIST, "scores");
+      } catch {}
+    } finally {
+      setIsLoadingLeaderboard(false);
+    }
+  };
+
+  const handleViewRanks = async () => {
+    setShowLeaderboard(true);
+    await fetchLeaderboard();
+  };
+
+  const submitScore = async () => {
+    if (submitStatus === 'submitting' || submitStatus === 'submitted') return;
+    const cleanName = (playerName.trim() || 'COSMIC PILOT').slice(0, 50);
+    setPlayerName(cleanName);
+    try {
+      localStorage.setItem('spaceShooterPlayerName', cleanName);
+    } catch {}
+
+    setSubmitStatus('submitting');
+    try {
+      const docRef = await addDoc(collection(db, "scores"), {
+        playerName: cleanName,
+        score: Number(score) || 0,
+        timestamp: serverTimestamp()
+      });
+      const newEntry: LeaderboardEntry = {
+        id: docRef.id,
+        playerName: cleanName,
+        score: Number(score) || 0,
+      };
+      setSubmitStatus('submitted');
+      setHighlightedScoreId(docRef.id);
+      setShowLeaderboard(true);
+      await fetchLeaderboard(newEntry);
+    } catch (err) {
+      setSubmitStatus('error');
+      try {
+        handleFirestoreError(err, OperationType.CREATE, "scores");
+      } catch {}
+    }
+  };
 
   const [energyBars, setEnergyBars] = useState(3);
   const [showControls, setShowControls] = useState(false);
@@ -474,8 +559,8 @@ export default function App() {
         this.x = x;
         this.y = y;
         this.speed = -10.5;
-        this.radius = 24;
-        this.maxRadius = 75; // Approx 150px diameter (4cm on screen)
+        this.radius = 12;
+        this.maxRadius = 30; // Reduced max radius
         this.width = this.radius * 2;
         this.height = this.radius * 2;
         this.type = 'fireball';
@@ -533,8 +618,8 @@ export default function App() {
           if (!enemy.markedForDeletion) {
             const dx = (enemy.x + enemy.width / 2) - this.x;
             const dy = (enemy.y + enemy.height / 2) - this.y;
-            if (Math.sqrt(dx * dx + dy * dy) < this.radius + Math.max(enemy.width, enemy.height) / 2) {
-              enemy.hp -= 2;
+            if (Math.sqrt(dx * dx + dy * dy) < this.radius + Math.max(enemy.width, enemy.height) / 2 + 10) { // Spread effect
+              enemy.hp -= 4; // Increased damage for better impact
               if (enemy.hp <= 0) {
                 enemy.hit();
               }
@@ -565,19 +650,24 @@ export default function App() {
         this.particles.forEach(p => {
           const alpha = 1 - (p.life / p.maxLife);
           ctx.fillStyle = p.color;
-          ctx.globalAlpha = alpha * 0.8;
+          ctx.globalAlpha = alpha * 0.9; // Slightly more opaque
           ctx.beginPath();
-          ctx.arc(p.x, p.y, Math.max(2, 6 * alpha), 0, Math.PI * 2);
+          // Use smaller particles to create more detail
+          ctx.arc(p.x, p.y, Math.max(1, 4 * alpha), 0, Math.PI * 2);
           ctx.fill();
         });
 
         // Draw expanding core plasma
-        ctx.globalAlpha = 0.92;
+        ctx.globalAlpha = 0.8; // Slightly more transparent for a "glowing" effect
         const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
-        grad.addColorStop(0, '#ffffff');
-        grad.addColorStop(0.2, '#fef08a');
-        grad.addColorStop(0.5, '#f59e0b');
-        grad.addColorStop(0.85, '#ef4444');
+        grad.addColorStop(0, '#ffffff'); // Center
+        grad.addColorStop(0.3, '#fef08a'); // Yellow
+        grad.addColorStop(0.6, '#f59e0b'); // Orange
+        grad.addColorStop(1, 'transparent'); // Fade out
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
         grad.addColorStop(1, 'rgba(185, 28, 28, 0)');
         
         ctx.fillStyle = grad;
@@ -2454,6 +2544,7 @@ export default function App() {
       }
 
       gameOver() {
+        setSubmitStatus('idle');
         setGameMode('gameover');
         setScore(currentScore => {
           setHighScore(currentHigh => {
@@ -2558,6 +2649,7 @@ export default function App() {
   };
 
   const handleRestart = async () => {
+    setSubmitStatus('idle');
     await initAudio();
     setGameMode('playing');
     if (navMode === 'swipe' && !hasShownHintRef.current) {
@@ -2570,6 +2662,7 @@ export default function App() {
   };
 
   const handleMenu = () => {
+    setSubmitStatus('idle');
     setGameMode('menu');
     setShowUpgrades(false);
     if (gameRef.current) {
@@ -2919,6 +3012,7 @@ export default function App() {
             <div className="title-text">COSMIC<span>SHOOTER</span></div>
             <button className="btn" onClick={handlePlay}>PLAY</button>
             <button className="btn btn-outline" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
+            <button className="btn btn-outline" onClick={handleViewRanks}>VIEW RANKS</button>
             <button className="btn btn-outline" onClick={() => setShowControls(!showControls)}>CONTROLS</button>
             <button 
               className="btn btn-outline mt-3 text-xs tracking-wider" 
@@ -3011,18 +3105,42 @@ export default function App() {
             ))}
           </div>
 
-          <div className="panel relative z-10">
-            <h2 className="text-4xl font-bold text-red-500 mb-6 font-[Orbitron] tracking-widest">GAME OVER</h2>
-            <div className="mb-8 bg-gray-900 bg-opacity-50 p-4 rounded-lg border border-gray-700">
-              <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">FINAL SCORE</p>
-              <p className="text-3xl text-blue-300 font-[Orbitron] mb-4">{score.toString().padStart(6, '0')}</p>
-              <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">BEST SCORE</p>
-              <p className="text-xl text-yellow-400 font-[Orbitron]">{highScore.toString().padStart(6, '0')}</p>
-            </div>
-            <button className="btn" onClick={handleRestart}>RETRY</button>
-            <button className="btn btn-outline" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
-            <button className="btn btn-outline" onClick={handleMenu}>MAIN MENU</button>
+          <div className="panel relative z-10 w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] scroll-smooth">
+          <h2 className="text-4xl font-bold text-red-500 mb-6 font-[Orbitron] tracking-widest">GAME OVER</h2>
+          <div className="mb-8 bg-gray-900 bg-opacity-50 p-4 rounded-lg border border-gray-700">
+            <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">FINAL SCORE</p>
+            <p className="text-3xl text-blue-300 font-[Orbitron] mb-4">{score.toString().padStart(6, '0')}</p>
           </div>
+          <input
+            type="text"
+            placeholder="Enter Pilot Name"
+            className="w-full bg-gray-800 p-2.5 mb-4 rounded text-white border border-gray-600 focus:border-blue-500 outline-none font-[Orbitron]"
+            value={playerName}
+            onChange={(e) => {
+              setPlayerName(e.target.value);
+              if (submitStatus === 'error') setSubmitStatus('idle');
+            }}
+            maxLength={20}
+            disabled={submitStatus === 'submitting' || submitStatus === 'submitted'}
+          />
+          <button 
+            className={`btn w-full mb-2 ${
+              submitStatus === 'submitted' ? '!bg-green-700 !border-green-500 text-green-100 cursor-default' :
+              submitStatus === 'error' ? '!bg-red-700 !border-red-500 text-red-100 animate-pulse' :
+              ''
+            }`}
+            onClick={submitScore}
+            disabled={submitStatus === 'submitting' || submitStatus === 'submitted'}
+          >
+            {submitStatus === 'submitting' ? 'SUBMITTING...' :
+             submitStatus === 'submitted' ? 'SUBMITTED' :
+             submitStatus === 'error' ? 'OOPS! RETRY' :
+             'SUBMIT SCORE'}
+          </button>
+          <button className="btn btn-outline w-full mb-2" onClick={handleViewRanks}>VIEW RANKS</button>
+          <button className="btn btn-outline w-full mb-2" onClick={handleRestart}>RETRY</button>
+          <button className="btn btn-outline w-full" onClick={handleMenu}>MAIN MENU</button>
+        </div>
         </div>
       )}
 
@@ -3235,6 +3353,16 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <LeaderboardModal 
+        show={showLeaderboard} 
+        leaderboard={leaderboard}
+        isLoading={isLoadingLeaderboard}
+        error={leaderboardError}
+        highlightedId={highlightedScoreId}
+        onRetry={() => fetchLeaderboard()}
+        onClose={() => setShowLeaderboard(false)} 
+      />
     </div>
   );
 }

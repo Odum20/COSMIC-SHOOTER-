@@ -1,7 +1,8 @@
 {
-  "name": "Cosmic Shooter",
-  "description": "An action-packed 2D arcade space shooter featuring upgrade armory, kinetic orbit shields, thermal plasma flamethrowers, alien mind-control hacks, configurable key bindings, and retro synth audio.",
+  "name": "Remix Cosmic Shooter",
+  "description": "An action-packed 2D arcade space shooter game with retro synth sound effects, mobile touch controls, powerups, and asteroids.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
-
