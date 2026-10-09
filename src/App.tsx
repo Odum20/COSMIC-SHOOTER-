@@ -3008,7 +3008,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="panel relative z-10">
+          <div className="panel relative z-10 modern-scrollbar">
             <div className="title-text">COSMIC<span>SHOOTER</span></div>
             <button className="btn" onClick={handlePlay}>PLAY</button>
             <button className="btn btn-outline" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
@@ -3069,7 +3069,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="panel relative z-10">
+          <div className="panel relative z-10 modern-scrollbar">
             <h2 className="text-4xl font-bold text-blue-400 mb-8 font-[Orbitron] tracking-widest">PAUSED</h2>
             <button className="btn" onClick={handlePauseToggle}>RESUME</button>
             <button className="btn btn-outline mt-4" onClick={handleOpenUpgrades}>UPGRADE ARMORY</button>
@@ -3105,7 +3105,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="panel relative z-10 w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] scroll-smooth">
+          <div className="panel relative z-10 w-full max-w-sm max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] scroll-smooth modern-scrollbar">
           <h2 className="text-4xl font-bold text-red-500 mb-6 font-[Orbitron] tracking-widest">GAME OVER</h2>
           <div className="mb-8 bg-gray-900 bg-opacity-50 p-4 rounded-lg border border-gray-700">
             <p className="text-gray-400 text-xs uppercase tracking-widest mb-1">FINAL SCORE</p>

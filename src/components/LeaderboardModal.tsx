@@ -80,7 +80,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           </div>
         )}
 
-        <div className="h-64 overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] pr-1 mb-4 space-y-1.5">
+        <div className="h-64 overflow-y-auto overscroll-contain touch-pan-y [-webkit-overflow-scrolling:touch] pr-1 mb-4 space-y-1.5 modern-scrollbar">
           {isLoading ? (
             <div className="h-full flex flex-col items-center justify-center text-sky-300 font-[Orbitron] text-sm gap-2">
               <div className="w-7 h-7 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
